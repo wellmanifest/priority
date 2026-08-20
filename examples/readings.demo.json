@@ -1,0 +1,9 @@
+{
+  "gate_fail_open": 1,
+  "digest_drift": 1,
+  "manifest_conformance": 35,
+  "adopters": 4,
+  "coverage": 37,
+  "open_claims": 0,
+  "standard_churn": {"value": null, "age_seconds": 3600, "changed": true}
+}

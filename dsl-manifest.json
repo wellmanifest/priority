@@ -1,0 +1,365 @@
+{
+  "$schema": "https://wellmanifest.com/schemas/dsl-manifest/v1",
+  "schema": "wellmanifest.dsl/manifest/v1",
+  "id": "wellmanifest.priority",
+  "name": "Wellmanifest priority and intent-evolution DSL",
+  "version": "0.1.0-dev",
+  "status": "experimental",
+  "purpose": "Declare standing priorities, the signals that reweight them, and the amendments by which the intent itself is revised. Propose-only: it ranks and explains, it never edits.",
+  "domain": "software-prioritization",
+  "owners": [
+    {
+      "kind": "repository",
+      "id": "github:wellmanifest/priority",
+      "responsibilities": [
+        "semantics",
+        "validation",
+        "compatibility"
+      ]
+    }
+  ],
+  "source": {
+    "repository": "https://github.com/wellmanifest/priority",
+    "path": "schemas/priority.schema.json",
+    "declaredVersion": "1",
+    "canonical": "json-ast",
+    "mediaType": "application/schema+json",
+    "selectors": []
+  },
+  "ownedPaths": [
+    "docs/**",
+    "dsl-manifest.json",
+    "examples/**",
+    "schemas/**",
+    "src/priority.py"
+  ],
+  "namespaces": [
+    {
+      "prefix": "wellmanifest",
+      "uri": "https://wellmanifest.com/"
+    },
+    {
+      "prefix": "priority",
+      "uri": "https://wellmanifest.com/priority/"
+    }
+  ],
+  "projections": [
+    {
+      "name": "document-priority-text",
+      "mediaType": "text/plain",
+      "direction": "bidirectional",
+      "lossless": true
+    },
+    {
+      "name": "agent-instructions",
+      "mediaType": "text/markdown",
+      "direction": "from-canonical",
+      "lossless": false
+    },
+    {
+      "name": "ranking-json",
+      "mediaType": "application/json",
+      "direction": "from-canonical",
+      "lossless": false
+    }
+  ],
+  "lifecycle": {
+    "compatibility": "semver",
+    "stability": "experimental",
+    "breaking": "major",
+    "additive": "minor",
+    "fix": "patch"
+  },
+  "semantics": {
+    "effectModel": "propose-only",
+    "unknownPolicy": "reject",
+    "authoritySchema": null
+  },
+  "llm": {
+    "mode": "none",
+    "requestSchemas": [],
+    "responseSchemas": [],
+    "naturalLanguage": "typed-source-only",
+    "sourceSchema": "wellmanifest.priority/v1",
+    "modelAuthority": "none",
+    "strict": true
+  },
+  "documentation": {
+    "vocabularyKind": "commands",
+    "commandRoot": "docs",
+    "errorRoot": "docs/ERROR",
+    "criticalRoot": "docs/CRITICAL",
+    "commands": [
+      "PRIORITY",
+      "SIGNAL",
+      "RELATION",
+      "AMEND"
+    ],
+    "errorCodes": [
+      "PRIORITY-KIND-001",
+      "PRIORITY-SIGNAL-001",
+      "PRIORITY-SIGNAL-002",
+      "PRIORITY-SIGNAL-003",
+      "PRIORITY-TIER-001",
+      "PRIORITY-TIER-002",
+      "PRIORITY-INTENT-001",
+      "PRIORITY-INTENT-002",
+      "PRIORITY-INTENT-003",
+      "PRIORITY-WEIGHT-001",
+      "PRIORITY-RULE-001",
+      "PRIORITY-RULE-002",
+      "PRIORITY-RULE-003",
+      "PRIORITY-AMEND-001",
+      "PRIORITY-AMEND-002",
+      "PRIORITY-RELATION-001",
+      "PRIORITY-PROJECTION-001"
+    ],
+    "criticalCodes": [
+      "PRIORITY-EFFECT-001"
+    ]
+  },
+  "findingPolicy": {
+    "schema": "wellmanifest.dsl/findings/v1",
+    "requiredProducers": [
+      "wellmanifest.priority.validator"
+    ],
+    "securityProducers": [
+      "wellmanifest.priority.validator"
+    ],
+    "blockingSeverities": [
+      "critical"
+    ],
+    "requireEvaluable": true,
+    "blockUnresolvedSecurity": true
+  },
+  "publicationPolicy": {
+    "declaredTier": "review",
+    "deterministic": true,
+    "independentReview": true,
+    "externalAuthority": false,
+    "runtimeIsolation": false
+  },
+  "conformance": {
+    "levels": [
+      "manifest",
+      "contract"
+    ],
+    "commands": [
+      "PYTHONPATH=src python3 -m priority validate examples/standardization.priority.dsl",
+      "PYTHONPATH=src python3 -m unittest discover -s tests"
+    ],
+    "validExamples": [
+      "examples/standardization.priority.dsl"
+    ],
+    "invalidExamples": [
+      "examples/invalid/unsourced-signal.priority.dsl"
+    ]
+  },
+  "mappings": [
+    {
+      "standard": "wellmanifest.dsl",
+      "version": "0.1.0-dev",
+      "relation": "implements",
+      "uri": "https://github.com/wellmanifest/dsl"
+    },
+    {
+      "standard": "wellmanifest.project-ssot",
+      "version": "0.2.0-dev",
+      "relation": "compatible-with",
+      "uri": "https://github.com/wellmanifest/project-ssot"
+    },
+    {
+      "standard": "wellmanifest.new-project",
+      "version": "0.17.0",
+      "relation": "maps-to",
+      "uri": "https://github.com/wellmanifest/new-project"
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "docs/AMEND.md",
+      "role": "documentation",
+      "digest": "sha256:4d7daa9d755d359012ceb9f1f02c15646c124ccbcd002d7e267769b150043f4e"
+    },
+    {
+      "path": "docs/COMPLEMENTARITY.md",
+      "role": "documentation",
+      "digest": "sha256:64176e913c748ce1f1a72a6c97ae67bdfd33349856d517864227826ee8c3c2b9"
+    },
+    {
+      "path": "docs/CRITICAL/PRIORITY-EFFECT-001.md",
+      "role": "documentation",
+      "digest": "sha256:e235b04bb51f37293c514149bfa729c9cccf39a13c7560460698d3af327c7f65"
+    },
+    {
+      "path": "docs/ERROR/PRIORITY-AMEND-001.md",
+      "role": "documentation",
+      "digest": "sha256:a8f1543c2b0f5e497e6afde272537371bd4b058e78e659b25118d1612bef9c38"
+    },
+    {
+      "path": "docs/ERROR/PRIORITY-AMEND-002.md",
+      "role": "documentation",
+      "digest": "sha256:773b7b090aab861d10e2c0f9345689194dc3ea2e70aa5d083ad7bd0c56e52a6d"
+    },
+    {
+      "path": "docs/ERROR/PRIORITY-INTENT-001.md",
+      "role": "documentation",
+      "digest": "sha256:e78cb6db000444ed9065768ae7509b71fc64f1f9dc5fd3b1783d1d369f5286a1"
+    },
+    {
+      "path": "docs/ERROR/PRIORITY-INTENT-002.md",
+      "role": "documentation",
+      "digest": "sha256:a0a602a6434d28170b1172f3539e38cac681a60d3cf25a5b4e21af9cef24752a"
+    },
+    {
+      "path": "docs/ERROR/PRIORITY-INTENT-003.md",
+      "role": "documentation",
+      "digest": "sha256:126f9c7cf043745042dc58cd9888c995f25eea731a7888e762ea1cfa0dc17a0c"
+    },
+    {
+      "path": "docs/ERROR/PRIORITY-KIND-001.md",
+      "role": "documentation",
+      "digest": "sha256:09f256bc9e5a6d22b3e36819bb64e58e23e43a6609af32a60243f55918df96ee"
+    },
+    {
+      "path": "docs/ERROR/PRIORITY-PROJECTION-001.md",
+      "role": "documentation",
+      "digest": "sha256:0d2bad971d14cdd8d2a42754edcbf4835258a9a8411824b71780ae2c9a065f55"
+    },
+    {
+      "path": "docs/ERROR/PRIORITY-RELATION-001.md",
+      "role": "documentation",
+      "digest": "sha256:4e251d99a58ae51d207eb0572847eb1ce5b6539bc8d065e31589bea4947e4e4e"
+    },
+    {
+      "path": "docs/ERROR/PRIORITY-RULE-001.md",
+      "role": "documentation",
+      "digest": "sha256:dbc5900a6944f3b7beaf6173eb56eb2d8adf9248f1883c1604363e2f3d7158c8"
+    },
+    {
+      "path": "docs/ERROR/PRIORITY-RULE-002.md",
+      "role": "documentation",
+      "digest": "sha256:0b6dc89e3518d68aa1056fa3bb9bc6241ec8e8f3c1d6fc149d4063bd1ce2dfb6"
+    },
+    {
+      "path": "docs/ERROR/PRIORITY-RULE-003.md",
+      "role": "documentation",
+      "digest": "sha256:eb5e56b8dceb334de99339fb6cd6e142634c738204c2770d9f7eeccd6a211421"
+    },
+    {
+      "path": "docs/ERROR/PRIORITY-SIGNAL-001.md",
+      "role": "documentation",
+      "digest": "sha256:5f86b522e81fb3f5352b2aa0b81e30ca87c9b2240bdd74f71f77d047a9cf9e46"
+    },
+    {
+      "path": "docs/ERROR/PRIORITY-SIGNAL-002.md",
+      "role": "documentation",
+      "digest": "sha256:2f9b64b3ead6c579a98a28a84c59b2060eba4b93a9d19afe581afe4d9bc37736"
+    },
+    {
+      "path": "docs/ERROR/PRIORITY-SIGNAL-003.md",
+      "role": "documentation",
+      "digest": "sha256:244550e7b8bbe6f4ac7451f03f378d62e86de94502eab9fbf6ffa2184c7da34c"
+    },
+    {
+      "path": "docs/ERROR/PRIORITY-TIER-001.md",
+      "role": "documentation",
+      "digest": "sha256:7813f22c56cc4495e701f9b3581f4685a2f75c8a6620196136b44695ca76e8e1"
+    },
+    {
+      "path": "docs/ERROR/PRIORITY-TIER-002.md",
+      "role": "documentation",
+      "digest": "sha256:50baeb4d6fa393193c0e43e3159bbce0b7604cf19b512041ba5926f96afd6ed8"
+    },
+    {
+      "path": "docs/ERROR/PRIORITY-WEIGHT-001.md",
+      "role": "documentation",
+      "digest": "sha256:681bd080a8ab1e2968629e8db93d5b6e81d157fa6c85c4a5880fd1976956e5d1"
+    },
+    {
+      "path": "docs/GRAMMAR.md",
+      "role": "documentation",
+      "digest": "sha256:7ab0fc117a98d0372e0470aada19224f8cd916160d6d6b5e93505da98a1e07e5"
+    },
+    {
+      "path": "docs/PRIORITY.md",
+      "role": "documentation",
+      "digest": "sha256:43b7526ce113310f6f4c9683c916528ca2f99057503bafe924001526a22b66e6"
+    },
+    {
+      "path": "docs/RELATION.md",
+      "role": "documentation",
+      "digest": "sha256:0607068ad483bfb0f5035e49b1689578cce7c6c1f2342cab73d534c65ee79902"
+    },
+    {
+      "path": "docs/SIGNAL.md",
+      "role": "documentation",
+      "digest": "sha256:1238b9f93ba013d35685b3349cc51aade1b1d2ef6b5b27ec859bd359a61d329d"
+    },
+    {
+      "path": "docs/STANDARD.md",
+      "role": "documentation",
+      "digest": "sha256:2748c309efce6b013589716790355e2e622318ea9b5a483f807faeab2c9881c6"
+    },
+    {
+      "path": "docs/TRIGGERS.md",
+      "role": "documentation",
+      "digest": "sha256:e770b1e31ffa0e7ee49614d5bc5000091f4b492f0d5acf56b00c4ae572475863"
+    },
+    {
+      "path": "examples/integration/README.md",
+      "role": "example",
+      "digest": "sha256:0c5145e9dfff580c60149e0b3bdd7e0680eb25d69ce5dcd640c6381a4e02d451"
+    },
+    {
+      "path": "examples/integration/pre-commit",
+      "role": "example",
+      "digest": "sha256:6a83fec179a996f4832a6d73fc01512a95d014b08150285c1ee4b8cc46e58dc8"
+    },
+    {
+      "path": "examples/integration/priority-sweep.service",
+      "role": "example",
+      "digest": "sha256:b4ffabda11a1d221098803b115935a338a43a4817d6110b017f56d1274a11b83"
+    },
+    {
+      "path": "examples/integration/priority-sweep.timer",
+      "role": "example",
+      "digest": "sha256:b7ea84acca9fa683d181c9c4d8ca904f62c8522292830fbabd81b6c15246931b"
+    },
+    {
+      "path": "examples/integration/priority-watch.sh",
+      "role": "example",
+      "digest": "sha256:1498abd2ad606fd97699e302b3a16feff7b5b836d18d677f24ac807733f7139c"
+    },
+    {
+      "path": "examples/integration/pyqual.yaml",
+      "role": "example",
+      "digest": "sha256:60e5a99d7af4e9de0daa31c61729c33469083d21f51d10990718e0851aae65a7"
+    },
+    {
+      "path": "examples/invalid/unsourced-signal.priority.dsl",
+      "role": "example",
+      "digest": "sha256:849acec59985748f7a7463f2b23383b1eefe42978bba2236a3f7c5f65d38ba29"
+    },
+    {
+      "path": "examples/readings.demo.json",
+      "role": "example",
+      "digest": "sha256:2ed88229b5b7de70ed0803c8eda78e49afeaf13583c8c2196940b57dc5208ab5"
+    },
+    {
+      "path": "examples/standardization.priority.dsl",
+      "role": "example",
+      "digest": "sha256:8d49f6ea4071264d90c93abdbab2f8bc622bdb24d7226308c45e573e0809bc7d"
+    },
+    {
+      "path": "schemas/priority.schema.json",
+      "role": "normative-source",
+      "digest": "sha256:574e3978724168ed3f6c309afdab5cf6d688a7d7c5b9d7edb1b009306920ad2f"
+    },
+    {
+      "path": "src/priority.py",
+      "role": "normative-source",
+      "digest": "sha256:18eb2e45abd54a6b73540e01925aa8b106dbe0703b69d6f4871ec312ff0f210d"
+    }
+  ]
+}

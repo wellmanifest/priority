@@ -1,0 +1,413 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wellmanifest.com/schemas/priority/v1",
+  "title": "Wellmanifest priority document v1",
+  "description": "Standing priorities, the signals that reweight them, and the amendments by which the intent itself is revised. Propose-only: the document ranks and explains, it never authorizes an edit.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "id",
+    "version",
+    "priorities"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "format": "uri"
+    },
+    "schema": {
+      "const": "wellmanifest.priority/v1"
+    },
+    "id": {
+      "$ref": "#/$defs/identifier"
+    },
+    "version": {
+      "$ref": "#/$defs/semver"
+    },
+    "effect": {
+      "const": "propose-only"
+    },
+    "signals": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/signal"
+      }
+    },
+    "priorities": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/priority"
+      }
+    },
+    "relations": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/relation"
+      }
+    }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$"
+    },
+    "semver": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?$"
+    },
+    "duration": {
+      "type": "string",
+      "pattern": "^[0-9]+[smhdw]$"
+    },
+    "condition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "signal",
+        "op",
+        "value"
+      ],
+      "properties": {
+        "signal": {
+          "$ref": "#/$defs/identifier"
+        },
+        "op": {
+          "enum": [
+            ">",
+            ">=",
+            "<",
+            "<=",
+            "==",
+            "!=",
+            "changed",
+            "stale",
+            "elapsed"
+          ]
+        },
+        "value": {
+          "type": "number"
+        }
+      }
+    },
+    "signal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "kind",
+        "producer"
+      ],
+      "description": "A named, typed measurement. The producer is declared so a rank can always be traced to something that was measured, and a missing producer is a finding rather than a silent zero.",
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/identifier"
+        },
+        "kind": {
+          "enum": [
+            "metric",
+            "event",
+            "schedule"
+          ]
+        },
+        "producer": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 400
+        },
+        "unit": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "window": {
+          "$ref": "#/$defs/duration"
+        },
+        "absent": {
+          "enum": [
+            "hold",
+            "zero"
+          ],
+          "description": "hold (default): a missing reading fires nothing, so absence of evidence never raises a priority."
+        }
+      }
+    },
+    "priority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "tier",
+        "intent",
+        "because",
+        "base",
+        "satisfiedWhen"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "tier": {
+          "enum": [
+            "floor",
+            "standard",
+            "opportunistic"
+          ],
+          "description": "Lexicographic band. No accumulation of lower-tier weight can outrank a single unsatisfied floor item."
+        },
+        "intent": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 400
+        },
+        "because": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 600,
+          "description": "The evidence. A priority without stated evidence is a preference."
+        },
+        "base": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "touches": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "description": "The surface this work edits; drives measured complementarity and collision detection."
+        },
+        "satisfiedWhen": {
+          "$ref": "#/$defs/condition"
+        },
+        "rules": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/rule"
+          }
+        },
+        "escalate": {
+          "$ref": "#/$defs/rate"
+        },
+        "decay": {
+          "$ref": "#/$defs/rate"
+        },
+        "starvation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "points",
+            "per"
+          ],
+          "description": "Additive fairness term. Without it a fleet optimizes into its hot spots and the rest rots.",
+          "properties": {
+            "points": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "per": {
+              "$ref": "#/$defs/duration"
+            },
+            "cap": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            }
+          }
+        },
+        "amendments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/amendment"
+          }
+        }
+      }
+    },
+    "rate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "factor",
+        "per"
+      ],
+      "properties": {
+        "factor": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "per": {
+          "$ref": "#/$defs/duration"
+        }
+      }
+    },
+    "rule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "signal",
+        "op",
+        "value",
+        "action",
+        "factor",
+        "because"
+      ],
+      "description": "Changes the WEIGHT of an intent. Compare amendment, which changes the intent.",
+      "properties": {
+        "signal": {
+          "$ref": "#/$defs/identifier"
+        },
+        "op": {
+          "enum": [
+            ">",
+            ">=",
+            "<",
+            "<=",
+            "==",
+            "!=",
+            "changed",
+            "stale",
+            "elapsed"
+          ]
+        },
+        "value": {
+          "type": "number"
+        },
+        "action": {
+          "enum": [
+            "RAISE",
+            "LOWER"
+          ]
+        },
+        "factor": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "because": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 400
+        }
+      }
+    },
+    "amendment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "signal",
+        "op",
+        "value",
+        "because"
+      ],
+      "description": "Changes the INTENT itself. Kept separate from a weight rule because 'this got more urgent' and 'this is no longer what we want' are different events, and collapsing them lets a priority quietly become a different priority while keeping its identity.",
+      "anyOf": [
+        {
+          "required": [
+            "rewriteIntent"
+          ]
+        },
+        {
+          "required": [
+            "setTier"
+          ]
+        },
+        {
+          "required": [
+            "setBase"
+          ]
+        },
+        {
+          "required": [
+            "retire"
+          ]
+        }
+      ],
+      "properties": {
+        "signal": {
+          "$ref": "#/$defs/identifier"
+        },
+        "op": {
+          "enum": [
+            ">",
+            ">=",
+            "<",
+            "<=",
+            "==",
+            "!=",
+            "changed",
+            "stale",
+            "elapsed"
+          ]
+        },
+        "value": {
+          "type": "number"
+        },
+        "for": {
+          "$ref": "#/$defs/duration"
+        },
+        "rewriteIntent": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 400
+        },
+        "setTier": {
+          "enum": [
+            "floor",
+            "standard",
+            "opportunistic"
+          ]
+        },
+        "setBase": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "retire": {
+          "const": true
+        },
+        "because": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 400
+        }
+      }
+    },
+    "relation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "a",
+        "b",
+        "kind"
+      ],
+      "description": "A declared pairing. A human who has looked at two priorities outranks a similarity score.",
+      "properties": {
+        "a": {
+          "$ref": "#/$defs/identifier"
+        },
+        "b": {
+          "$ref": "#/$defs/identifier"
+        },
+        "kind": {
+          "enum": [
+            "complementary",
+            "antagonistic",
+            "neutral"
+          ]
+        },
+        "strength": {
+          "type": "number",
+          "minimum": -1,
+          "maximum": 1
+        },
+        "because": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 400
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,35 @@
+# Hosting the priority check inside an existing quality-gate runner.
+#
+# Nothing in the runner needs to know what a priority document is: the check is
+# an external command that emits JSON, and the gate is a plain numeric threshold.
+# That is the whole point of keeping the producer contract to "print a number".
+
+custom_tools:
+  - name: priority
+    binary: priority
+    command: "priority check ${PRIORITY_DOCUMENT:-priority.dsl} --format json > .priority/findings.json"
+    output: .priority/findings.json
+    allow_failure: true
+
+  - name: priority-floor
+    binary: priority
+    command: "priority rank ${PRIORITY_DOCUMENT:-priority.dsl} --probe --format json > .priority/ranking.json"
+    output: .priority/ranking.json
+    allow_failure: true
+
+stages:
+  - name: priority
+    tool: priority
+    when: always
+  - name: priority-floor
+    tool: priority-floor
+    when: always
+
+# Gates are numeric, so "conforms" is expressed as a count of zero.
+gates:
+  priority_projection_drift_max: 0   # agent files match the document
+  priority_floor_unmet_max: 0        # no stated guarantee is currently false
+
+loop:
+  max_iterations: 1
+  on_fail: create_ticket

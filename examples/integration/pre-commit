@@ -1,0 +1,35 @@
+#!/bin/sh
+# Commit-time gate. Blocks only on an unsatisfied floor item.
+#
+# Blocking on anything less trains people to pass --no-verify, after which the
+# floor items stop being enforced too. That failure mode is the reason this
+# script is three lines of logic rather than a full evaluation.
+set -eu
+
+DOC="${PRIORITY_DOCUMENT:-priority.dsl}"
+[ -f "$DOC" ] || exit 0
+
+# Reuse readings inside their declared window; --probe re-takes only what expired.
+priority rank "$DOC" --probe --format json > .priority/readings.json 2>/dev/null || exit 0
+
+UNMET=$(python3 - <<'PY'
+import json
+try:
+    items = json.load(open(".priority/readings.json"))
+except Exception:
+    raise SystemExit(0)
+blocking = [i for i in items if i["tier"] == "floor" and not i["satisfied"] and not i["retired"]]
+for item in blocking:
+    print(f"BLOCKED  {item['id']} — {item['intent']}")
+    for reason in item["explanation"]:
+        print(f"         · {reason}")
+raise SystemExit(1 if blocking else 0)
+PY
+) || {
+    printf '%s\n' "$UNMET" >&2
+    echo "" >&2
+    echo "A floor priority is unsatisfied: the system's stated guarantees are currently false." >&2
+    echo "Fix it, or record the decision to defer with an AMEND in $DOC." >&2
+    exit 1
+}
+exit 0

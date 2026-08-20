@@ -1,0 +1,11 @@
+[Unit]
+Description=Priority sweep (read-only)
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/workspace
+# propose-only: the sweep refreshes the ranking and the projections, and reports
+# drift. It never blocks and never edits anything outside the managed blocks.
+ExecStart=/usr/bin/env priority project priority.dsl --probe --write
+ExecStart=/usr/bin/env priority check priority.dsl
+SuccessExitStatus=0 1

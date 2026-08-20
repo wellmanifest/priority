@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+from datetime import datetime, timezone
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 from pathlib import Path
@@ -438,6 +439,122 @@ class EvaluationContextTests(unittest.TestCase):
             P.load_evaluation_context(document, payload, readings)
 
 
+class EvaluationAttestationTests(unittest.TestCase):
+    ISSUER = "priority-evaluator://reference/runtime"
+    IMPLEMENTATION = "sha256:" + "1" * 64
+    AUDIENCE = "queue://priority-ranking"
+
+    def fixture(self):
+        document = doc()
+        readings = P.load_readings(document, ReadingsContractTests().payload(document))
+        context = P.load_evaluation_context(
+            document, EvaluationContextTests().payload(document, readings), readings
+        )
+        receipt = P.ranking_receipt_v2(document, context, readings)
+        attestation = {
+            "schema": P.EVALUATION_ATTESTATION_SCHEMA,
+            "predicateType": P.EVALUATION_PREDICATE_TYPE,
+            "attestationId": "priority-attestation://reference/run-0001",
+            "issuer": {
+                "id": self.ISSUER,
+                "implementationDigest": self.IMPLEMENTATION,
+            },
+            "subject": {
+                "document": P.document_identity(document),
+                "readings": readings.receipt_ref(),
+                "context": context.receipt_ref(),
+                "ranking": {
+                    "schema": P.RANKING_SCHEMA_V2,
+                    "digest": receipt["receiptDigest"],
+                },
+            },
+            "validity": {
+                "issuedAt": "2026-08-20T09:00:02Z",
+                "expiresAt": "2026-08-20T09:10:02Z",
+            },
+            "antiReplay": {
+                "nonce": "0123456789abcdefghijklmn",
+                "audience": self.AUDIENCE,
+                "singleUse": True,
+            },
+            "signature": {
+                "scheme": "ed25519",
+                "keyId": "reference-key-v1",
+                "value": "dGVzdC1zaWduYXR1cmU=",
+            },
+            "executionAuthorized": False,
+        }
+        return document, readings, context, receipt, attestation
+
+    def verify(self, document, readings, context, receipt, attestation, **overrides):
+        arguments = {
+            "readings": readings,
+            "trusted_issuers": {self.ISSUER: {self.IMPLEMENTATION}},
+            "expected_audience": self.AUDIENCE,
+            "at": datetime(2026, 8, 20, 9, 5, tzinfo=timezone.utc),
+            "consumed_nonces": set(),
+            "signature_verifier": lambda payload, signature: bool(payload)
+            and signature["value"] == "dGVzdC1zaWduYXR1cmU=",
+        }
+        arguments.update(overrides)
+        return P.verify_evaluation_attestation(
+            document, context, receipt, attestation, **arguments
+        )
+
+    def test_exact_attestation_verifies_without_granting_execution(self) -> None:
+        document, readings, context, receipt, attestation = self.fixture()
+        verified = self.verify(document, readings, context, receipt, attestation)
+        self.assertEqual(verified.ranking_digest, receipt["receiptDigest"])
+        self.assertEqual(verified.issuer, self.ISSUER)
+        self.assertFalse(attestation["executionAuthorized"])
+        self.assertEqual(
+            verified.payload_digest,
+            P.canonical_digest(
+                {key: value for key, value in attestation.items() if key != "signature"}
+            ),
+        )
+
+    def test_ranking_context_and_subject_drift_fail_closed(self) -> None:
+        document, readings, context, receipt, attestation = self.fixture()
+        changed_receipt = json.loads(json.dumps(receipt))
+        changed_receipt["priorities"][0]["effective"] += 1
+        with self.assertRaisesRegex(ValueError, "ranking mismatch"):
+            self.verify(document, readings, context, changed_receipt, attestation)
+
+        changed_attestation = json.loads(json.dumps(attestation))
+        changed_attestation["subject"]["context"]["revision"] = "scheduler:other"
+        with self.assertRaisesRegex(ValueError, "subject mismatch"):
+            self.verify(document, readings, context, receipt, changed_attestation)
+
+    def test_trust_audience_time_replay_and_signature_fail_closed(self) -> None:
+        document, readings, context, receipt, attestation = self.fixture()
+        cases = (
+            ({"trusted_issuers": {}}, "untrusted"),
+            ({"expected_audience": "queue://other"}, "replay protection"),
+            ({"consumed_nonces": {attestation["antiReplay"]["nonce"]}}, "replay protection"),
+            ({"at": datetime(2026, 8, 20, 9, 11, tzinfo=timezone.utc)}, "not current"),
+            ({"signature_verifier": lambda payload, signature: False}, "signature verification"),
+        )
+        for overrides, message in cases:
+            with self.subTest(message=message), self.assertRaisesRegex(ValueError, message):
+                self.verify(
+                    document, readings, context, receipt, attestation, **overrides
+                )
+
+        attestation["validity"]["issuedAt"] = "2026-08-20T08:59:59Z"
+        with self.assertRaisesRegex(ValueError, "not current"):
+            self.verify(document, readings, context, receipt, attestation)
+
+    def test_schema_accepts_the_semantically_valid_fixture(self) -> None:
+        import jsonschema
+
+        *_, attestation = self.fixture()
+        schema = json.loads(
+            (ROOT / "schemas" / "evaluation-attestation.schema.json").read_text()
+        )
+        jsonschema.validate(attestation, schema)
+
+
 class CliContractTests(unittest.TestCase):
     def test_stable_package_namespace_is_explicit(self) -> None:
         self.assertEqual(PUBLIC.__version__, "0.1.0.dev0")
@@ -446,6 +563,12 @@ class CliContractTests(unittest.TestCase):
         self.assertIs(PUBLIC.ranking_receipt_v2, P.ranking_receipt_v2)
         self.assertEqual(PUBLIC.CONTEXT_SCHEMA, P.CONTEXT_SCHEMA)
         self.assertEqual(PUBLIC.RANKING_SCHEMA_V2, P.RANKING_SCHEMA_V2)
+        self.assertEqual(
+            PUBLIC.EVALUATION_ATTESTATION_SCHEMA, P.EVALUATION_ATTESTATION_SCHEMA
+        )
+        self.assertIs(
+            PUBLIC.verify_evaluation_attestation, P.verify_evaluation_attestation
+        )
         self.assertNotIn("argparse", PUBLIC.__all__)
 
     def test_format_is_accepted_after_the_subcommand(self) -> None:
@@ -580,6 +703,7 @@ class AbstractionTests(unittest.TestCase):
                  "docs/TRIGGERS.md", "schemas/priority.schema.json",
                  "schemas/readings.schema.json", "schemas/evaluation-context.schema.json",
                  "schemas/ranking.schema.json", "schemas/ranking-v2.schema.json",
+                 "schemas/evaluation-attestation.schema.json",
                  "src/priority.py"]
 
     def test_no_adopter_names_in_normative_surfaces(self) -> None:

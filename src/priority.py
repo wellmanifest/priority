@@ -18,7 +18,7 @@ import json
 import math
 import re
 import sys
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -29,6 +29,8 @@ READINGS_SCHEMA = "wellmanifest.priority/readings/v1"
 CONTEXT_SCHEMA = "wellmanifest.priority/evaluation-context/v1"
 RANKING_SCHEMA = "wellmanifest.priority/ranking/v1"
 RANKING_SCHEMA_V2 = "wellmanifest.priority/ranking/v2"
+EVALUATION_ATTESTATION_SCHEMA = "wellmanifest.priority/evaluation-attestation/v1"
+EVALUATION_PREDICATE_TYPE = "https://wellmanifest.com/attestations/priority-evaluation/v1"
 
 TIERS = ("floor", "standard", "opportunistic")
 #: Lexicographic bands. A lower index always outranks a higher one, whatever the
@@ -862,6 +864,162 @@ def ranking_receipt_v2(
     }
     receipt["receiptDigest"] = canonical_digest(receipt)
     return receipt
+
+
+@dataclass(frozen=True)
+class VerifiedEvaluation:
+    """Exact, current evaluation accepted through an external trust boundary."""
+
+    attestation_id: str
+    issuer: str
+    nonce: str
+    audience: str
+    payload_digest: str
+    ranking_digest: str
+
+
+def attestation_signing_bytes(attestation: Mapping[str, Any]) -> bytes:
+    """Canonical bytes covered by an evaluation attestation signature."""
+    if not isinstance(attestation, Mapping) or "signature" not in attestation:
+        raise ValueError("invalid evaluation attestation")
+    unsigned = {key: value for key, value in attestation.items() if key != "signature"}
+    return json.dumps(
+        unsigned, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+
+
+def verify_evaluation_attestation(
+    document: Mapping[str, Any],
+    context: EvaluationContext,
+    receipt: Mapping[str, Any],
+    attestation: Mapping[str, Any],
+    *,
+    readings: ReadingsEnvelope | None = None,
+    trusted_issuers: Mapping[str, Iterable[str]],
+    expected_audience: str,
+    at: datetime,
+    consumed_nonces: Iterable[str],
+    signature_verifier: Callable[[bytes, Mapping[str, Any]], bool],
+) -> VerifiedEvaluation:
+    """Verify exact bindings and delegate signature trust to a protected caller.
+
+    This function does not own keys or issuer policy.  ``signature_verifier``
+    must cross a separately controlled protected boundary; repository code
+    returning ``True`` is not trust evidence.  Nonce consumption remains an
+    atomic responsibility of the caller after this function succeeds.
+    """
+    top_fields = {
+        "schema", "predicateType", "attestationId", "issuer", "subject",
+        "validity", "antiReplay", "signature", "executionAuthorized",
+    }
+    if not isinstance(attestation, Mapping) or set(attestation) != top_fields:
+        raise ValueError("invalid evaluation attestation")
+    if attestation.get("schema") != EVALUATION_ATTESTATION_SCHEMA:
+        raise ValueError("invalid evaluation attestation")
+    if attestation.get("predicateType") != EVALUATION_PREDICATE_TYPE:
+        raise ValueError("invalid evaluation attestation predicate")
+    if attestation.get("executionAuthorized") is not False:
+        raise ValueError("evaluation attestation cannot authorize execution")
+
+    attestation_id = attestation.get("attestationId")
+    if not isinstance(attestation_id, str) or not re.fullmatch(
+        r"priority-attestation://[a-z0-9][a-z0-9._:/-]{2,200}", attestation_id
+    ):
+        raise ValueError("invalid evaluation attestation id")
+    issuer = attestation.get("issuer")
+    if not isinstance(issuer, Mapping) or set(issuer) != {"id", "implementationDigest"}:
+        raise ValueError("invalid evaluation attestation issuer")
+    issuer_id = issuer.get("id")
+    implementation_digest = issuer.get("implementationDigest")
+    if not isinstance(issuer_id, str) or not re.fullmatch(
+        r"priority-evaluator://[a-z0-9][a-z0-9._/-]{2,200}", issuer_id
+    ):
+        raise ValueError("invalid evaluation attestation issuer")
+    if not isinstance(implementation_digest, str) or not re.fullmatch(
+        r"sha256:[a-f0-9]{64}", implementation_digest
+    ):
+        raise ValueError("invalid evaluation attestation issuer")
+    trusted_digests = set(trusted_issuers.get(issuer_id, ()))
+    if implementation_digest not in trusted_digests:
+        raise ValueError("untrusted evaluation attestation issuer")
+
+    bound_readings = load_readings(document, readings.payload) if readings is not None else None
+    bound_context = load_evaluation_context(document, context.payload, bound_readings)
+    expected_receipt = ranking_receipt_v2(document, bound_context, bound_readings)
+    if dict(receipt) != expected_receipt:
+        raise ValueError("evaluation attestation ranking mismatch")
+    subject = attestation.get("subject")
+    if not isinstance(subject, Mapping) or set(subject) != {
+        "document", "readings", "context", "ranking"
+    }:
+        raise ValueError("invalid evaluation attestation subject")
+    expected_subject = {
+        "document": document_identity(document),
+        "readings": bound_readings.receipt_ref() if bound_readings is not None else None,
+        "context": bound_context.receipt_ref(),
+        "ranking": {"schema": RANKING_SCHEMA_V2, "digest": receipt["receiptDigest"]},
+    }
+    if dict(subject) != expected_subject:
+        raise ValueError("evaluation attestation subject mismatch")
+
+    validity = attestation.get("validity")
+    if not isinstance(validity, Mapping) or set(validity) != {"issuedAt", "expiresAt"}:
+        raise ValueError("invalid evaluation attestation validity")
+    issued_at = _timestamp(validity.get("issuedAt"))
+    expires_at = _timestamp(validity.get("expiresAt"))
+    current = at.astimezone(timezone.utc) if at.tzinfo is not None else None
+    if (
+        current is None
+        or issued_at >= expires_at
+        or issued_at < _timestamp(bound_context.observed_at)
+        or (expires_at - issued_at).total_seconds() > 900
+        or current < issued_at
+        or current >= expires_at
+    ):
+        raise ValueError("evaluation attestation is not current")
+
+    anti_replay = attestation.get("antiReplay")
+    if not isinstance(anti_replay, Mapping) or set(anti_replay) != {
+        "nonce", "audience", "singleUse"
+    }:
+        raise ValueError("invalid evaluation attestation replay protection")
+    nonce = anti_replay.get("nonce")
+    audience = anti_replay.get("audience")
+    if (
+        not isinstance(nonce, str)
+        or not re.fullmatch(r"[A-Za-z0-9_-]{24,128}", nonce)
+        or nonce in set(consumed_nonces)
+        or not isinstance(audience, str)
+        or not re.fullmatch(r"[a-z][a-z0-9+.-]*://[A-Za-z0-9][A-Za-z0-9._:/-]{1,238}", audience)
+        or audience != expected_audience
+        or anti_replay.get("singleUse") is not True
+    ):
+        raise ValueError("invalid evaluation attestation replay protection")
+
+    signature = attestation.get("signature")
+    if not isinstance(signature, Mapping) or set(signature) != {
+        "scheme", "keyId", "value"
+    }:
+        raise ValueError("invalid evaluation attestation signature")
+    if signature.get("scheme") not in {"ed25519", "sigstore"}:
+        raise ValueError("invalid evaluation attestation signature")
+    if not isinstance(signature.get("keyId"), str) or not 3 <= len(signature["keyId"]) <= 200:
+        raise ValueError("invalid evaluation attestation signature")
+    if not isinstance(signature.get("value"), str) or not re.fullmatch(
+        r"[A-Za-z0-9_+=./:-]{16,4096}", signature["value"]
+    ):
+        raise ValueError("invalid evaluation attestation signature")
+    signing_bytes = attestation_signing_bytes(attestation)
+    if not signature_verifier(signing_bytes, signature):
+        raise ValueError("evaluation attestation signature verification failed")
+    return VerifiedEvaluation(
+        attestation_id=attestation_id,
+        issuer=issuer_id,
+        nonce=nonce,
+        audience=audience,
+        payload_digest=canonical_digest(json.loads(signing_bytes)),
+        ranking_digest=receipt["receiptDigest"],
+    )
 
 
 def _condition_holds(

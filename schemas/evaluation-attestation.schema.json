@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wellmanifest.com/schemas/priority-evaluation-attestation/v1",
+  "title": "Wellmanifest priority evaluation attestation v1",
+  "description": "Signed, exact-subject and non-authorizing provenance for one ranking v2 evaluation.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "predicateType", "attestationId", "issuer", "subject", "validity", "antiReplay", "signature", "executionAuthorized"],
+  "properties": {
+    "schema": {"const": "wellmanifest.priority/evaluation-attestation/v1"},
+    "predicateType": {"const": "https://wellmanifest.com/attestations/priority-evaluation/v1"},
+    "attestationId": {"type": "string", "pattern": "^priority-attestation://[a-z0-9][a-z0-9._:/-]{2,200}$"},
+    "issuer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "implementationDigest"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^priority-evaluator://[a-z0-9][a-z0-9._/-]{2,200}$"},
+        "implementationDigest": {"$ref": "#/$defs/digest"}
+      }
+    },
+    "subject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["document", "readings", "context", "ranking"],
+      "properties": {
+        "document": {"$ref": "#/$defs/documentRef"},
+        "readings": {
+          "oneOf": [
+            {"type": "null"},
+            {"$ref": "#/$defs/artifactRef"}
+          ]
+        },
+        "context": {"$ref": "#/$defs/artifactRef"},
+        "ranking": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["schema", "digest"],
+          "properties": {
+            "schema": {"const": "wellmanifest.priority/ranking/v2"},
+            "digest": {"$ref": "#/$defs/digest"}
+          }
+        }
+      }
+    },
+    "validity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["issuedAt", "expiresAt"],
+      "properties": {
+        "issuedAt": {"type": "string", "format": "date-time", "maxLength": 40},
+        "expiresAt": {"type": "string", "format": "date-time", "maxLength": 40}
+      }
+    },
+    "antiReplay": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["nonce", "audience", "singleUse"],
+      "properties": {
+        "nonce": {"type": "string", "pattern": "^[A-Za-z0-9_-]{24,128}$"},
+        "audience": {"type": "string", "pattern": "^[a-z][a-z0-9+.-]*://[A-Za-z0-9][A-Za-z0-9._:/-]{1,238}$"},
+        "singleUse": {"const": true}
+      }
+    },
+    "signature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scheme", "keyId", "value"],
+      "properties": {
+        "scheme": {"enum": ["ed25519", "sigstore"]},
+        "keyId": {"type": "string", "minLength": 3, "maxLength": 200},
+        "value": {"type": "string", "pattern": "^[A-Za-z0-9_+=./:-]{16,4096}$"}
+      }
+    },
+    "executionAuthorized": {"const": false}
+  },
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+    "documentRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version", "digest"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1, "maxLength": 160},
+        "version": {"type": "string", "minLength": 1, "maxLength": 80},
+        "digest": {"$ref": "#/$defs/digest"}
+      }
+    },
+    "artifactRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["digest", "observedAt", "revision"],
+      "properties": {
+        "digest": {"$ref": "#/$defs/digest"},
+        "observedAt": {"type": "string", "format": "date-time", "maxLength": 40},
+        "revision": {"type": "string", "minLength": 1, "maxLength": 240}
+      }
+    }
+  }
+}

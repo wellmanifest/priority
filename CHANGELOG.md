@@ -4,6 +4,9 @@ All notable changes to this project are documented in this file.
 
 ## [0.1.0-dev]
 
+- Add `evaluation-attestation/v1` for short-lived, replay-resistant external
+  evaluator provenance with protected signature verification and exact v2
+  input/output bindings.
 - Add digest-bound `evaluation-context/v1` inputs for elapsed age and idle
   durations, and fully input-bound, non-authorizing `ranking/v2` receipts.
 - Keep `ranking/v1` compatible for callers that do not supply time-dependent

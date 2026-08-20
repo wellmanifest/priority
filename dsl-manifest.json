@@ -300,7 +300,7 @@
     {
       "path": "docs/STANDARD.md",
       "role": "documentation",
-      "digest": "sha256:faf4954a9c4a9318a3c4606da0fa3f1a3f94dadea03c199502147a46fc697834"
+      "digest": "sha256:1508a24f906e33b4ab92e559c3e6380986b91e89c0a9932bfaa2dc0b29c3ca8f"
     },
     {
       "path": "docs/TRIGGERS.md",
@@ -358,6 +358,11 @@
       "digest": "sha256:8d49f6ea4071264d90c93abdbab2f8bc622bdb24d7226308c45e573e0809bc7d"
     },
     {
+      "path": "schemas/evaluation-attestation.schema.json",
+      "role": "schema",
+      "digest": "sha256:f717f5022cca24927a6cd26caad57c28a88084a042eb9eb97a713a81dea31864"
+    },
+    {
       "path": "schemas/evaluation-context.schema.json",
       "role": "schema",
       "digest": "sha256:d946d6ab81183c32892bfb706f168a7dbe91670e2374f3341a6e518c87c8b966"
@@ -390,12 +395,12 @@
     {
       "path": "src/priority.py",
       "role": "normative-source",
-      "digest": "sha256:a2b07fffbaf4915c206c2e3ac22558554576daa874020b615c4cd67da65492f9"
+      "digest": "sha256:b3a6e5eefc66a8d868f8099e530f294873b885f12b235373d34e2157d74c8281"
     },
     {
       "path": "src/wellmanifest_priority/__init__.py",
       "role": "parser-contract",
-      "digest": "sha256:8b0c7a07e9cc3c3460bbc9af3c0b0fdbdb5e07748ca76ad78f28593889cc3d73"
+      "digest": "sha256:d642a0eb4bbebb9fe7d5f6072dfa698afe95d0dc5158f3c65e7692b1b0f80d88"
     }
   ]
 }

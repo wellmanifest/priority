@@ -100,6 +100,15 @@ evaluator cannot use a hidden clock or an unrecorded last-touch time and still
 claim the same input identity. Ranking receipt v2 binds the context digest in
 addition to the document and readings; it remains non-authorizing.
 
+An evaluation attestation MAY bind a ranking v2 receipt to an external
+evaluator identity and immutable implementation digest. It MUST bind the exact
+document, readings, context and ranking digest; expire within 15 minutes; name
+one exact audience; carry a single-use nonce; and be signed by an allowlisted
+issuer. Signature verification and atomic nonce consumption MUST occur at a
+separately controlled protected boundary. Repository code, an embedded digest
+or an issuer label alone is not trust evidence. An evaluation attestation MUST
+carry `executionAuthorized: false` and cannot grant an effect.
+
 ## 5. Complementarity
 
 Priorities are not independent, and ranking them one at a time produces batches

@@ -62,6 +62,14 @@ document and readings revision. Passing `--context` emits
 change the rank. V1 remains available for evaluations that do not supply this
 time context.
 
+An external runtime may sign an
+`wellmanifest.priority/evaluation-attestation/v1` over the exact document,
+readings, context and ranking v2 digest. The reference verifier requires an
+allowlisted issuer implementation digest, audience, current 15-minute validity
+window, unused nonce and a caller-provided protected signature verifier. The
+attestation remains `executionAuthorized: false`; it proves provenance and
+reproducibility, not permission to execute work.
+
 ## Reaching heterogeneous agents
 
 Claude, ChatGPT/Codex, Gemini and IDE assistants read different files, and no

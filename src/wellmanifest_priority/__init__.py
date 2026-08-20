@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from priority import (
     CONTEXT_SCHEMA,
+    EVALUATION_ATTESTATION_SCHEMA,
+    EVALUATION_PREDICATE_TYPE,
     RANKING_SCHEMA,
     RANKING_SCHEMA_V2,
     READINGS_SCHEMA,
@@ -18,7 +20,9 @@ from priority import (
     Finding,
     Reading,
     ReadingsEnvelope,
+    VerifiedEvaluation,
     antagonisms,
+    attestation_signing_bytes,
     canonical_digest,
     complementarity,
     document_identity,
@@ -35,12 +39,15 @@ from priority import (
     select,
     splice,
     validate,
+    verify_evaluation_attestation,
 )
 
 __version__ = "0.1.0.dev0"
 
 __all__ = (
     "CONTEXT_SCHEMA",
+    "EVALUATION_ATTESTATION_SCHEMA",
+    "EVALUATION_PREDICATE_TYPE",
     "RANKING_SCHEMA",
     "RANKING_SCHEMA_V2",
     "READINGS_SCHEMA",
@@ -50,8 +57,10 @@ __all__ = (
     "Finding",
     "Reading",
     "ReadingsEnvelope",
+    "VerifiedEvaluation",
     "__version__",
     "antagonisms",
+    "attestation_signing_bytes",
     "canonical_digest",
     "complementarity",
     "document_identity",
@@ -68,4 +77,5 @@ __all__ = (
     "select",
     "splice",
     "validate",
+    "verify_evaluation_attestation",
 )

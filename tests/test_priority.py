@@ -353,10 +353,99 @@ class ReadingsContractTests(unittest.TestCase):
         self.assertEqual(digest, P.canonical_digest(first))
 
 
+class EvaluationContextTests(unittest.TestCase):
+    def payload(
+        self,
+        document: dict,
+        readings: P.ReadingsEnvelope | None,
+    ) -> dict:
+        return {
+            "schema": P.CONTEXT_SCHEMA,
+            "document": P.document_identity(document),
+            "readings": readings.receipt_ref() if readings is not None else None,
+            "observedAt": "2026-08-20T09:00:01Z",
+            "revision": "scheduler:run-1",
+            "ages": {"honest_gates": P.parse_duration("28d")},
+            "idle": {"standard_is_abstract": P.parse_duration("28d")},
+        }
+
+    def test_context_binds_every_time_dependent_input(self) -> None:
+        document = doc()
+        readings = P.load_readings(document, ReadingsContractTests().payload(document))
+        context = P.load_evaluation_context(document, self.payload(document, readings), readings)
+        ranked = P.evaluate(
+            document, readings.readings, ages=context.ages, idle=context.idle
+        )
+        receipt = P.ranking_receipt_v2(document, context, readings)
+
+        self.assertEqual(receipt["schema"], P.RANKING_SCHEMA_V2)
+        self.assertEqual(receipt["context"], context.receipt_ref())
+        self.assertFalse(receipt["executionAuthorized"])
+        unsigned = {key: value for key, value in receipt.items() if key != "receiptDigest"}
+        self.assertEqual(receipt["receiptDigest"], P.canonical_digest(unsigned))
+        self.assertGreater(
+            next(item for item in ranked if item.id == "honest_gates").effective,
+            next(
+                item for item in P.evaluate(document, readings.readings)
+                if item.id == "honest_gates"
+            ).effective,
+        )
+
+    def test_shipped_context_example_is_bound_to_shipped_readings(self) -> None:
+        document = doc()
+        readings = P.load_readings(
+            document,
+            json.loads((ROOT / "examples" / "readings.demo.json").read_text()),
+        )
+        context = P.load_evaluation_context(
+            document,
+            json.loads((ROOT / "examples" / "evaluation-context.demo.json").read_text()),
+            readings,
+        )
+        self.assertEqual(context.revision, "scheduler:example-run-20260820")
+        self.assertEqual(
+            P.ranking_receipt_v2(document, context, readings)["schema"],
+            P.RANKING_SCHEMA_V2,
+        )
+
+    def test_context_rejects_drift_and_unknown_priorities(self) -> None:
+        document = doc()
+        readings = P.load_readings(document, ReadingsContractTests().payload(document))
+        payload = self.payload(document, readings)
+        payload["readings"] = None
+        with self.assertRaisesRegex(ValueError, "readings binding"):
+            P.load_evaluation_context(document, payload, readings)
+
+        payload = self.payload(document, readings)
+        payload["ages"] = {"ghost": 1}
+        with self.assertRaisesRegex(ValueError, "priority mismatch"):
+            P.load_evaluation_context(document, payload, readings)
+
+    def test_context_rejects_negative_non_finite_and_future_binding(self) -> None:
+        document = doc()
+        readings = P.load_readings(document, ReadingsContractTests().payload(document))
+        for invalid in (-1, float("inf"), True):
+            payload = self.payload(document, readings)
+            payload["idle"] = {"honest_gates": invalid}
+            with self.subTest(invalid=invalid), self.assertRaisesRegex(
+                ValueError, "invalid evaluation context"
+            ):
+                P.load_evaluation_context(document, payload, readings)
+
+        payload = self.payload(document, readings)
+        payload["observedAt"] = "2026-08-20T08:59:59Z"
+        with self.assertRaisesRegex(ValueError, "invalid evaluation context"):
+            P.load_evaluation_context(document, payload, readings)
+
+
 class CliContractTests(unittest.TestCase):
     def test_stable_package_namespace_is_explicit(self) -> None:
         self.assertEqual(PUBLIC.__version__, "0.1.0.dev0")
         self.assertIs(PUBLIC.evaluate, P.evaluate)
+        self.assertIs(PUBLIC.load_evaluation_context, P.load_evaluation_context)
+        self.assertIs(PUBLIC.ranking_receipt_v2, P.ranking_receipt_v2)
+        self.assertEqual(PUBLIC.CONTEXT_SCHEMA, P.CONTEXT_SCHEMA)
+        self.assertEqual(PUBLIC.RANKING_SCHEMA_V2, P.RANKING_SCHEMA_V2)
         self.assertNotIn("argparse", PUBLIC.__all__)
 
     def test_format_is_accepted_after_the_subcommand(self) -> None:
@@ -382,6 +471,28 @@ class CliContractTests(unittest.TestCase):
         receipt = json.loads(output.getvalue())
         self.assertEqual(status, 0)
         self.assertEqual(receipt["schema"], P.RANKING_SCHEMA)
+
+    def test_receipt_command_binds_evaluation_context(self) -> None:
+        document = doc()
+        readings_payload = ReadingsContractTests().payload(document)
+        readings = P.load_readings(document, readings_payload)
+        context_payload = EvaluationContextTests().payload(document, readings)
+        context = P.load_evaluation_context(document, context_payload, readings)
+        with tempfile.TemporaryDirectory() as temporary:
+            readings_path = Path(temporary) / "readings.json"
+            context_path = Path(temporary) / "context.json"
+            readings_path.write_text(json.dumps(readings_payload), encoding="utf-8")
+            context_path.write_text(json.dumps(context_payload), encoding="utf-8")
+            output = StringIO()
+            with redirect_stdout(output):
+                status = P.main([
+                    "receipt", str(EXAMPLE), "--readings", str(readings_path),
+                    "--context", str(context_path),
+                ])
+        receipt = json.loads(output.getvalue())
+        self.assertEqual(status, 0)
+        self.assertEqual(receipt["schema"], P.RANKING_SCHEMA_V2)
+        self.assertEqual(receipt["context"]["digest"], context.digest)
 
 
 class SchemaAgreementTests(unittest.TestCase):
@@ -447,13 +558,28 @@ class SchemaAgreementTests(unittest.TestCase):
         receipt = P.ranking_receipt(document, P.evaluate(document, envelope.readings), envelope)
         jsonschema.validate(receipt, ranking_schema)
 
+    def test_context_and_v2_receipt_match_their_schemas(self) -> None:
+        import jsonschema
+
+        document = doc()
+        readings = P.load_readings(document, ReadingsContractTests().payload(document))
+        payload = EvaluationContextTests().payload(document, readings)
+        context_schema = json.loads(
+            (ROOT / "schemas" / "evaluation-context.schema.json").read_text()
+        )
+        ranking_schema = json.loads((ROOT / "schemas" / "ranking-v2.schema.json").read_text())
+        jsonschema.validate(payload, context_schema)
+        context = P.load_evaluation_context(document, payload, readings)
+        jsonschema.validate(P.ranking_receipt_v2(document, context, readings), ranking_schema)
+
 
 class AbstractionTests(unittest.TestCase):
     """The pack must not name any adopter in a normative surface (AGENTS.md rule 1)."""
 
     NORMATIVE = ["docs/STANDARD.md", "docs/GRAMMAR.md", "docs/COMPLEMENTARITY.md",
                  "docs/TRIGGERS.md", "schemas/priority.schema.json",
-                 "schemas/readings.schema.json", "schemas/ranking.schema.json",
+                 "schemas/readings.schema.json", "schemas/evaluation-context.schema.json",
+                 "schemas/ranking.schema.json", "schemas/ranking-v2.schema.json",
                  "src/priority.py"]
 
     def test_no_adopter_names_in_normative_surfaces(self) -> None:

@@ -300,12 +300,17 @@
     {
       "path": "docs/STANDARD.md",
       "role": "documentation",
-      "digest": "sha256:034fd646dd1efd7b079a052f539171c6974acf5eacfe6d0bed6c17ece25687a8"
+      "digest": "sha256:faf4954a9c4a9318a3c4606da0fa3f1a3f94dadea03c199502147a46fc697834"
     },
     {
       "path": "docs/TRIGGERS.md",
       "role": "documentation",
-      "digest": "sha256:ce2a2c3b1508c04a03cbe2126b7e503dd13d6cb7cf21b19c35160a4a2512e611"
+      "digest": "sha256:07bd60ee9cfca16ea062113ce66b4318ecb4c37da2d601140384132273cb63a9"
+    },
+    {
+      "path": "examples/evaluation-context.demo.json",
+      "role": "example",
+      "digest": "sha256:add3ac4bc421ddf5b60dc46e0aee0009ee84c660680a3688c49e39dbfe86e6ab"
     },
     {
       "path": "examples/integration/README.md",
@@ -353,9 +358,19 @@
       "digest": "sha256:8d49f6ea4071264d90c93abdbab2f8bc622bdb24d7226308c45e573e0809bc7d"
     },
     {
+      "path": "schemas/evaluation-context.schema.json",
+      "role": "schema",
+      "digest": "sha256:d946d6ab81183c32892bfb706f168a7dbe91670e2374f3341a6e518c87c8b966"
+    },
+    {
       "path": "schemas/priority.schema.json",
       "role": "normative-source",
       "digest": "sha256:574e3978724168ed3f6c309afdab5cf6d688a7d7c5b9d7edb1b009306920ad2f"
+    },
+    {
+      "path": "schemas/ranking-v2.schema.json",
+      "role": "schema",
+      "digest": "sha256:1d70d31e623e2e753cd946df706d23136615591703232eee1ba3c657012abbe0"
     },
     {
       "path": "schemas/ranking.schema.json",
@@ -375,12 +390,12 @@
     {
       "path": "src/priority.py",
       "role": "normative-source",
-      "digest": "sha256:0c1d5fa99ccc4ae957f5c72419a5f46c61db0b10b59e0befcd835d1895f8b6d9"
+      "digest": "sha256:a2b07fffbaf4915c206c2e3ac22558554576daa874020b615c4cd67da65492f9"
     },
     {
       "path": "src/wellmanifest_priority/__init__.py",
       "role": "parser-contract",
-      "digest": "sha256:ea746b238b3548abe945c14979be03856f4967e0ddd6bba7a16fcf55a40bd93f"
+      "digest": "sha256:8b0c7a07e9cc3c3460bbc9af3c0b0fdbdb5e07748ca76ad78f28593889cc3d73"
     }
   ]
 }

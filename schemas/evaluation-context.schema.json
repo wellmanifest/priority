@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wellmanifest.com/schemas/priority-evaluation-context/v1",
+  "title": "Wellmanifest priority evaluation context v1",
+  "description": "Revision-bound age and idle inputs required to reproduce escalation, decay and starvation.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "document", "readings", "observedAt", "revision", "ages", "idle"],
+  "properties": {
+    "schema": {"const": "wellmanifest.priority/evaluation-context/v1"},
+    "document": {"$ref": "#/$defs/documentRef"},
+    "readings": {
+      "oneOf": [
+        {"type": "null"},
+        {"$ref": "#/$defs/artifactRef"}
+      ]
+    },
+    "observedAt": {"type": "string", "format": "date-time", "maxLength": 40},
+    "revision": {"type": "string", "minLength": 1, "maxLength": 240},
+    "ages": {"$ref": "#/$defs/durations"},
+    "idle": {"$ref": "#/$defs/durations"}
+  },
+  "$defs": {
+    "documentRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version", "digest"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1, "maxLength": 160},
+        "version": {"type": "string", "minLength": 1, "maxLength": 80},
+        "digest": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"}
+      }
+    },
+    "artifactRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["digest", "observedAt", "revision"],
+      "properties": {
+        "digest": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+        "observedAt": {"type": "string", "format": "date-time", "maxLength": 40},
+        "revision": {"type": "string", "minLength": 1, "maxLength": 240}
+      }
+    },
+    "durations": {
+      "type": "object",
+      "propertyNames": {"pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$"},
+      "additionalProperties": {"type": "number", "minimum": 0}
+    }
+  }
+}

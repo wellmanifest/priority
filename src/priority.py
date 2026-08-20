@@ -26,7 +26,9 @@ from typing import Any
 
 SCHEMA = "wellmanifest.priority/v1"
 READINGS_SCHEMA = "wellmanifest.priority/readings/v1"
+CONTEXT_SCHEMA = "wellmanifest.priority/evaluation-context/v1"
 RANKING_SCHEMA = "wellmanifest.priority/ranking/v1"
+RANKING_SCHEMA_V2 = "wellmanifest.priority/ranking/v2"
 
 TIERS = ("floor", "standard", "opportunistic")
 #: Lexicographic bands. A lower index always outranks a higher one, whatever the
@@ -698,6 +700,96 @@ def load_readings(
     )
 
 
+@dataclass(frozen=True)
+class EvaluationContext:
+    """Validated, reproducible time inputs for one evaluation run."""
+
+    observed_at: str
+    revision: str
+    ages: Mapping[str, float]
+    idle: Mapping[str, float]
+    payload: Mapping[str, Any]
+
+    @property
+    def digest(self) -> str:
+        return canonical_digest(self.payload)
+
+    def receipt_ref(self) -> dict[str, str]:
+        return {
+            "digest": self.digest,
+            "observedAt": self.observed_at,
+            "revision": self.revision,
+        }
+
+
+def _duration_map(raw: Any, priority_ids: set[str]) -> dict[str, float]:
+    if not isinstance(raw, Mapping):
+        raise ValueError("invalid evaluation context")
+    if not all(isinstance(identifier, str) for identifier in raw):
+        raise ValueError("invalid evaluation context")
+    normalized: dict[str, float] = {}
+    for identifier in sorted(raw):
+        value = raw[identifier]
+        if identifier not in priority_ids:
+            raise ValueError("evaluation context priority mismatch")
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ValueError("invalid evaluation context")
+        duration = float(value)
+        if not math.isfinite(duration) or duration < 0:
+            raise ValueError("invalid evaluation context")
+        normalized[identifier] = duration
+    return normalized
+
+
+def load_evaluation_context(
+    document: Mapping[str, Any],
+    payload: Any,
+    readings: ReadingsEnvelope | None = None,
+) -> EvaluationContext:
+    """Validate ages and idle durations bound to one document/readings run."""
+    if not isinstance(payload, Mapping) or set(payload) != {
+        "schema", "document", "readings", "observedAt", "revision", "ages", "idle"
+    }:
+        raise ValueError("invalid evaluation context")
+    if payload.get("schema") != CONTEXT_SCHEMA:
+        raise ValueError("invalid evaluation context")
+    if payload.get("document") != document_identity(document):
+        raise ValueError("evaluation context document binding mismatch")
+
+    expected_readings = readings.receipt_ref() if readings is not None else None
+    if payload.get("readings") != expected_readings:
+        raise ValueError("evaluation context readings binding mismatch")
+    observed_at = payload.get("observedAt")
+    observed_time = _timestamp(observed_at)
+    if readings is not None and observed_time < _timestamp(readings.observed_at):
+        raise ValueError("invalid evaluation context")
+    revision = payload.get("revision")
+    if not isinstance(revision, str) or not revision or len(revision) > 240:
+        raise ValueError("invalid evaluation context")
+
+    priority_ids = {str(item["id"]) for item in document.get("priorities") or []}
+    if not priority_ids:
+        raise ValueError("invalid evaluation context")
+    ages = _duration_map(payload.get("ages"), priority_ids)
+    idle = _duration_map(payload.get("idle"), priority_ids)
+    normalized_payload = {
+        "schema": CONTEXT_SCHEMA,
+        "document": document_identity(document),
+        "readings": expected_readings,
+        "observedAt": observed_at,
+        "revision": revision,
+        "ages": ages,
+        "idle": idle,
+    }
+    return EvaluationContext(
+        observed_at=str(observed_at),
+        revision=revision,
+        ages=ages,
+        idle=idle,
+        payload=normalized_payload,
+    )
+
+
 @dataclass
 class Evaluated:
     id: str
@@ -739,6 +831,32 @@ def ranking_receipt(
         "schema": RANKING_SCHEMA,
         "document": document_identity(document),
         "readings": readings.receipt_ref() if readings is not None else None,
+        "priorities": [item.as_dict() for item in evaluated],
+        "executionAuthorized": False,
+    }
+    receipt["receiptDigest"] = canonical_digest(receipt)
+    return receipt
+
+
+def ranking_receipt_v2(
+    document: Mapping[str, Any],
+    context: EvaluationContext,
+    readings: ReadingsEnvelope | None = None,
+) -> dict[str, Any]:
+    """Build a receipt that binds every input affecting deterministic rank."""
+    bound_readings = load_readings(document, readings.payload) if readings is not None else None
+    bound_context = load_evaluation_context(document, context.payload, bound_readings)
+    evaluated = evaluate(
+        document,
+        bound_readings.readings if bound_readings is not None else None,
+        ages=bound_context.ages,
+        idle=bound_context.idle,
+    )
+    receipt: dict[str, Any] = {
+        "schema": RANKING_SCHEMA_V2,
+        "document": document_identity(document),
+        "readings": bound_readings.receipt_ref() if bound_readings is not None else None,
+        "context": bound_context.receipt_ref(),
         "priorities": [item.as_dict() for item in evaluated],
         "executionAuthorized": False,
     }
@@ -1083,6 +1201,7 @@ def project(
     evaluated: Sequence[Evaluated],
     targets: Mapping[str, str] | None = None,
     readings: ReadingsEnvelope | None = None,
+    context: EvaluationContext | None = None,
 ) -> dict[str, str]:
     """Render every agent-facing projection. Returns {path: content}."""
     targets = dict(targets or PROJECTION_TARGETS)
@@ -1090,8 +1209,13 @@ def project(
     out: dict[str, str] = {}
     for name, path in targets.items():
         if name == "json":
+            receipt = (
+                ranking_receipt_v2(document, context, readings)
+                if context is not None
+                else ranking_receipt(document, evaluated, readings)
+            )
             out[path] = json.dumps(
-                ranking_receipt(document, evaluated, readings), indent=2
+                receipt, indent=2
             ) + "\n"
         else:
             out[path] = block + "\n"
@@ -1161,6 +1285,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                 type=Path,
                 help="wellmanifest.priority/readings/v1 JSON envelope",
             )
+            child.add_argument(
+                "--context",
+                type=Path,
+                help="wellmanifest.priority/evaluation-context/v1 JSON envelope",
+            )
         if name == "select":
             child.add_argument("--capacity", type=int, default=3)
 
@@ -1186,7 +1315,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         envelope = load_readings(document, raw)
         readings = dict(envelope.readings)
 
-    evaluated = evaluate(document, readings)
+    context: EvaluationContext | None = None
+    if getattr(args, "context", None):
+        raw_context = json.loads(args.context.read_text())
+        context = load_evaluation_context(document, raw_context, envelope)
+
+    evaluated = evaluate(
+        document,
+        readings,
+        ages=context.ages if context is not None else None,
+        idle=context.idle if context is not None else None,
+    )
     matrix = complementarity(document)
 
     if args.command == "rank":
@@ -1224,10 +1363,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
 
     if args.command == "receipt":
-        print(json.dumps(ranking_receipt(document, evaluated, envelope), indent=2))
+        receipt = (
+            ranking_receipt_v2(document, context, envelope)
+            if context is not None
+            else ranking_receipt(document, evaluated, envelope)
+        )
+        print(json.dumps(receipt, indent=2))
         return 0
 
-    rendered = project(document, evaluated, readings=envelope)
+    rendered = project(document, evaluated, readings=envelope, context=context)
     if args.command == "project":
         if args.format == "json":
             print(json.dumps(rendered, indent=2))

@@ -1,8 +1,8 @@
 # Control loop — when a document is re-evaluated
 
-A priority document is a pure function of itself plus a set of readings. It is
-worth exactly as much as the freshness of those readings, so the standard defines
-*when* they are taken, not just how.
+A priority document is a pure function of itself plus readings and an optional
+evaluation context. It is worth exactly as much as the freshness and provenance
+of those inputs, so the standard defines *when* they are taken, not just how.
 
 ## Three cadences, and why not one
 
@@ -40,9 +40,15 @@ propose-only effect model. They differ only in what they may block:
   commit on a `standard` item trains people to pass `--no-verify`, after which
   the floor items stop being enforced too.
 - **Interval** never blocks. It emits fresh readings and a ranking receipt, then
-  reports proposed projection drift.
+  reports proposed projection drift. When elapsed durations affect rank, it also
+  emits a context envelope and ranking receipt v2.
 - **Watch** never blocks. It updates freshness inputs — which surfaces were
   touched, and when — that the other two consume.
+
+The runtime computes elapsed durations once per run and records them as explicit
+seconds in `evaluation-context/v1`. It must not let two evaluators consult their
+own clocks or private filesystem history: that would make the same nominal run
+produce ranks that an independent validator cannot reproduce.
 
 ## The projection step
 
@@ -54,5 +60,6 @@ evaluation itself never changes a repository.
 
 A watcher or timer is a running process, so it is a `runtime_service` and must
 **not** home in a standards repository. This pack defines the contract —
-signals, readings, cadences, the propose-only constraint — and stops there. The
-process that implements it homes wherever runtime services home.
+signals, readings, evaluation context, cadences, the propose-only constraint —
+and stops there. The process that implements it homes wherever runtime services
+home.

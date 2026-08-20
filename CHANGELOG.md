@@ -4,6 +4,10 @@ All notable changes to this project are documented in this file.
 
 ## [0.1.0-dev]
 
+- Add digest-bound `evaluation-context/v1` inputs for elapsed age and idle
+  durations, and fully input-bound, non-authorizing `ranking/v2` receipts.
+- Keep `ranking/v1` compatible for callers that do not supply time-dependent
+  evaluation context.
 - Package the evaluator as `wellmanifest-priority` with stable import and CLI
   entry points.
 - Add digest- and revision-bound `readings/v1` inputs and deterministic,

@@ -36,7 +36,9 @@ authorizes an edit.
 python3 -m pip install -e .
 priority validate examples/standardization.priority.dsl
 priority rank    examples/standardization.priority.dsl --readings examples/readings.demo.json
-priority receipt examples/standardization.priority.dsl --readings examples/readings.demo.json
+priority receipt examples/standardization.priority.dsl \
+  --readings examples/readings.demo.json \
+  --context examples/evaluation-context.demo.json
 priority matrix  examples/standardization.priority.dsl
 priority select  examples/standardization.priority.dsl --capacity 3
 priority project examples/standardization.priority.dsl   # proposed bytes only
@@ -51,6 +53,14 @@ freshness; optional `activeSince` records how long a condition has held.
 
 `priority receipt` emits a deterministic `wellmanifest.priority/ranking/v1`
 receipt. It is digest-bound and always carries `executionAuthorized: false`.
+
+Escalation, decay and starvation additionally depend on elapsed durations. A
+runtime that supplies them uses a
+`wellmanifest.priority/evaluation-context/v1` envelope bound to the exact
+document and readings revision. Passing `--context` emits
+`wellmanifest.priority/ranking/v2`, whose receipt binds every input that can
+change the rank. V1 remains available for evaluations that do not supply this
+time context.
 
 ## Reaching heterogeneous agents
 

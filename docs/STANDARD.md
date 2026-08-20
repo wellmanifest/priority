@@ -90,8 +90,15 @@ evidence never raises a priority.
 
 The producer reference is opaque data, not executable text. Producer execution
 belongs to an adopter-owned runtime with an explicit allowlist. The evaluator is
-a pure function of the priority document and a versioned readings envelope bound
-to the document digest, revision, observation time, and declared producers.
+a pure function of the priority document, a versioned readings envelope and,
+when time-based terms are used, a versioned evaluation context.
+
+The evaluation context contains only elapsed `ages` and `idle` durations. It is
+bound to the exact document and readings digest, revision and observation time.
+This makes escalation, decay and starvation independently reproducible: an
+evaluator cannot use a hidden clock or an unrecorded last-touch time and still
+claim the same input identity. Ranking receipt v2 binds the context digest in
+addition to the document and readings; it remains non-authorizing.
 
 ## 5. Complementarity
 

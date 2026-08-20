@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wellmanifest.com/schemas/priority-ranking/v2",
+  "title": "Wellmanifest priority ranking receipt v2",
+  "description": "Deterministic, fully input-bound and non-authorizing ranking receipt.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "document", "readings", "context", "priorities", "executionAuthorized", "receiptDigest"],
+  "properties": {
+    "schema": {"const": "wellmanifest.priority/ranking/v2"},
+    "document": {"$ref": "#/$defs/documentRef"},
+    "readings": {
+      "oneOf": [
+        {"type": "null"},
+        {"$ref": "#/$defs/artifactRef"}
+      ]
+    },
+    "context": {"$ref": "#/$defs/artifactRef"},
+    "priorities": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "tier", "intent", "base", "effective", "satisfied", "retired", "explanation", "amended"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "tier": {"enum": ["floor", "standard", "opportunistic"]},
+          "intent": {"type": "string", "minLength": 1},
+          "base": {"type": "number"},
+          "effective": {"type": "number"},
+          "satisfied": {"type": "boolean"},
+          "retired": {"type": "boolean"},
+          "explanation": {"type": "array", "items": {"type": "string"}},
+          "amended": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    },
+    "executionAuthorized": {"const": false},
+    "receiptDigest": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"}
+  },
+  "$defs": {
+    "documentRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version", "digest"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1, "maxLength": 160},
+        "version": {"type": "string", "minLength": 1, "maxLength": 80},
+        "digest": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"}
+      }
+    },
+    "artifactRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["digest", "observedAt", "revision"],
+      "properties": {
+        "digest": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+        "observedAt": {"type": "string", "format": "date-time", "maxLength": 40},
+        "revision": {"type": "string", "minLength": 1, "maxLength": 240}
+      }
+    }
+  }
+}

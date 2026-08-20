@@ -51,6 +51,12 @@ executes those producers. A runtime integration may run an explicit allowlist,
 then pass its observations to the pure evaluator. `observedAt` controls reading
 freshness; optional `activeSince` records how long a condition has held.
 
+Independent producers may emit partial readings envelopes. `compose_readings`
+combines disjoint, validated envelopes and emits a
+`wellmanifest.priority/readings-composition/v1` receipt binding every source
+digest and revision to the final readings digest. Duplicate signals and source
+observations newer than the composition time fail closed.
+
 `priority receipt` emits a deterministic `wellmanifest.priority/ranking/v1`
 receipt. It is digest-bound and always carries `executionAuthorized: false`.
 

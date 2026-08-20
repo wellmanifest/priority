@@ -354,6 +354,80 @@ class ReadingsContractTests(unittest.TestCase):
         self.assertEqual(digest, P.canonical_digest(first))
 
 
+class ReadingsCompositionTests(unittest.TestCase):
+    def sources(self, document: dict) -> dict[str, P.ReadingsEnvelope]:
+        first_payload = ReadingsContractTests().payload(document)
+        second_payload = {
+            "schema": P.READINGS_SCHEMA,
+            "document": P.document_identity(document),
+            "observedAt": "2026-08-20T09:00:00Z",
+            "revision": "queue:snapshot:012345",
+            "readings": {
+                "coverage": {
+                    "observedAt": "2026-08-20T08:59:00Z",
+                    "producerRef": "priority-probe coverage-pct",
+                    "value": 37,
+                }
+            },
+        }
+        return {
+            "quality-producer": P.load_readings(document, first_payload),
+            "queue-producer": P.load_readings(document, second_payload),
+        }
+
+    def test_composes_disjoint_sources_with_exact_provenance(self) -> None:
+        document = doc()
+        sources = self.sources(document)
+        output, receipt = P.compose_readings(
+            document,
+            sources,
+            observed_at="2026-08-20T09:00:01Z",
+            revision="compositor:run-1",
+        )
+        self.assertEqual(set(output.readings), {"gate_fail_open", "coverage"})
+        self.assertEqual(
+            [source["id"] for source in receipt["sources"]],
+            ["quality-producer", "queue-producer"],
+        )
+        self.assertEqual(receipt["output"], output.receipt_ref())
+        self.assertFalse(receipt["executionAuthorized"])
+        unsigned = {key: value for key, value in receipt.items() if key != "receiptDigest"}
+        self.assertEqual(receipt["receiptDigest"], P.canonical_digest(unsigned))
+
+    def test_duplicate_and_future_sources_fail_closed(self) -> None:
+        document = doc()
+        sources = self.sources(document)
+        with self.assertRaisesRegex(ValueError, "duplicate signals"):
+            P.compose_readings(
+                document,
+                {"first": sources["quality-producer"], "second": sources["quality-producer"]},
+                observed_at="2026-08-20T09:00:01Z",
+                revision="compositor:run-1",
+            )
+        with self.assertRaisesRegex(ValueError, "future"):
+            P.compose_readings(
+                document,
+                sources,
+                observed_at="2026-08-20T08:59:59Z",
+                revision="compositor:run-1",
+            )
+
+    def test_composition_receipt_matches_schema(self) -> None:
+        import jsonschema
+
+        document = doc()
+        _, receipt = P.compose_readings(
+            document,
+            self.sources(document),
+            observed_at="2026-08-20T09:00:01Z",
+            revision="compositor:run-1",
+        )
+        schema = json.loads(
+            (ROOT / "schemas" / "readings-composition.schema.json").read_text()
+        )
+        jsonschema.validate(receipt, schema)
+
+
 class EvaluationContextTests(unittest.TestCase):
     def payload(
         self,
@@ -569,6 +643,10 @@ class CliContractTests(unittest.TestCase):
         self.assertIs(
             PUBLIC.verify_evaluation_attestation, P.verify_evaluation_attestation
         )
+        self.assertIs(PUBLIC.compose_readings, P.compose_readings)
+        self.assertEqual(
+            PUBLIC.READINGS_COMPOSITION_SCHEMA, P.READINGS_COMPOSITION_SCHEMA
+        )
         self.assertNotIn("argparse", PUBLIC.__all__)
 
     def test_format_is_accepted_after_the_subcommand(self) -> None:
@@ -702,6 +780,7 @@ class AbstractionTests(unittest.TestCase):
     NORMATIVE = ["docs/STANDARD.md", "docs/GRAMMAR.md", "docs/COMPLEMENTARITY.md",
                  "docs/TRIGGERS.md", "schemas/priority.schema.json",
                  "schemas/readings.schema.json", "schemas/evaluation-context.schema.json",
+                 "schemas/readings-composition.schema.json",
                  "schemas/ranking.schema.json", "schemas/ranking-v2.schema.json",
                  "schemas/evaluation-attestation.schema.json",
                  "src/priority.py"]

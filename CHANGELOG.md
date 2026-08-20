@@ -4,6 +4,8 @@ All notable changes to this project are documented in this file.
 
 ## [0.1.0-dev]
 
+- Add deterministic composition of disjoint partial readings envelopes with a
+  source-bound, non-authorizing `readings-composition/v1` receipt.
 - Add `evaluation-attestation/v1` for short-lived, replay-resistant external
   evaluator provenance with protected signature verification and exact v2
   input/output bindings.

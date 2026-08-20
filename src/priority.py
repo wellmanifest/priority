@@ -31,6 +31,7 @@ RANKING_SCHEMA = "wellmanifest.priority/ranking/v1"
 RANKING_SCHEMA_V2 = "wellmanifest.priority/ranking/v2"
 EVALUATION_ATTESTATION_SCHEMA = "wellmanifest.priority/evaluation-attestation/v1"
 EVALUATION_PREDICATE_TYPE = "https://wellmanifest.com/attestations/priority-evaluation/v1"
+READINGS_COMPOSITION_SCHEMA = "wellmanifest.priority/readings-composition/v1"
 
 TIERS = ("floor", "standard", "opportunistic")
 #: Lexicographic bands. A lower index always outranks a higher one, whatever the
@@ -790,6 +791,55 @@ def load_evaluation_context(
         idle=idle,
         payload=normalized_payload,
     )
+
+
+def compose_readings(
+    document: Mapping[str, Any],
+    sources: Mapping[str, ReadingsEnvelope],
+    *,
+    observed_at: str,
+    revision: str,
+) -> tuple[ReadingsEnvelope, dict[str, Any]]:
+    """Compose disjoint producer envelopes and bind their provenance."""
+    if not isinstance(sources, Mapping) or not sources:
+        raise ValueError("invalid readings composition")
+    if not isinstance(revision, str) or not revision or len(revision) > 240:
+        raise ValueError("invalid readings composition")
+    composition_time = _timestamp(observed_at)
+    merged: dict[str, Any] = {}
+    source_refs: list[dict[str, Any]] = []
+    for source_id in sorted(sources):
+        if not isinstance(source_id, str) or not IDENTIFIER.fullmatch(source_id):
+            raise ValueError("invalid readings composition source")
+        source = sources[source_id]
+        if not isinstance(source, ReadingsEnvelope):
+            raise ValueError("invalid readings composition source")
+        bound = load_readings(document, source.payload)
+        if _timestamp(bound.observed_at) > composition_time:
+            raise ValueError("readings composition source is from the future")
+        overlap = set(merged) & set(bound.payload["readings"])
+        if overlap:
+            raise ValueError("readings composition has duplicate signals")
+        merged.update(bound.payload["readings"])
+        source_refs.append({"id": source_id, **bound.receipt_ref()})
+
+    output_payload = {
+        "schema": READINGS_SCHEMA,
+        "document": document_identity(document),
+        "observedAt": observed_at,
+        "revision": revision,
+        "readings": merged,
+    }
+    output = load_readings(document, output_payload)
+    receipt: dict[str, Any] = {
+        "schema": READINGS_COMPOSITION_SCHEMA,
+        "document": document_identity(document),
+        "sources": source_refs,
+        "output": output.receipt_ref(),
+        "executionAuthorized": False,
+    }
+    receipt["receiptDigest"] = canonical_digest(receipt)
+    return output, receipt
 
 
 @dataclass

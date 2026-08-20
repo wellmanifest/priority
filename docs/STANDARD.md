@@ -93,6 +93,13 @@ belongs to an adopter-owned runtime with an explicit allowlist. The evaluator is
 a pure function of the priority document, a versioned readings envelope and,
 when time-based terms are used, a versioned evaluation context.
 
+When signals have independent producers, each producer MAY emit a partial
+readings envelope. A compositor MUST validate every partial envelope against
+the same document, reject duplicate signal ownership and future observations,
+and emit a non-authorizing composition receipt that binds every source digest,
+revision and observation time to the final readings digest. It MUST NOT execute
+producer references or silently choose between conflicting readings.
+
 The evaluation context contains only elapsed `ages` and `idle` durations. It is
 bound to the exact document and readings digest, revision and observation time.
 This makes escalation, decay and starvation independently reproducible: an

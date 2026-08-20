@@ -14,7 +14,7 @@ ADOPT wellmanifest/{dsl, new-project, project-ssot}.
 3. `unknownPolicy` is `reject`.
 4. A watcher, timer, or daemon implementing `docs/TRIGGERS.md` is a
    `runtime_service` and **must not** home here.
-5. `schemas/{priority,readings,evaluation-context,ranking,ranking-v2,evaluation-attestation}.schema.json`
+5. `schemas/{priority,readings,readings-composition,evaluation-context,ranking,ranking-v2,evaluation-attestation}.schema.json`
    are normative sources and must stay in agreement with `src/priority.py`. A
    schema nothing executes is a dead schema; the test suite asserts the
    contracts agree on shipped examples.

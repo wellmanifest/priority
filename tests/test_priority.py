@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import json
+import tempfile
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
+from io import StringIO
 from pathlib import Path
 
 import priority as P
+import wellmanifest_priority as PUBLIC
 
 ROOT = Path(__file__).resolve().parents[1]
 EXAMPLE = ROOT / "examples" / "standardization.priority.dsl"
@@ -254,7 +258,9 @@ class ProjectionTests(unittest.TestCase):
     def test_json_projection_is_machine_readable(self) -> None:
         rendered = P.project(doc(), P.evaluate(doc(), {}))
         payload = json.loads(rendered[".priority/ranking.json"])
-        self.assertEqual(payload["document"], "fleet.standardization")
+        self.assertEqual(payload["document"]["id"], "fleet.standardization")
+        self.assertEqual(payload["document"]["digest"], P.canonical_digest(doc()))
+        self.assertFalse(payload["executionAuthorized"])
         self.assertTrue(payload["priorities"])
 
     def test_drift_is_detected_when_a_projection_is_missing(self) -> None:
@@ -267,27 +273,115 @@ class ProjectionTests(unittest.TestCase):
         self.assertTrue(all(f.code == "PRIORITY-PROJECTION-001" for f in problems))
 
 
-class ProbeTests(unittest.TestCase):
-    def test_producer_output_becomes_a_reading(self) -> None:
-        d = {"signals": [{"name": "m", "kind": "metric", "producer": "x"}]}
-        readings = P.probe(d, ROOT, runner=lambda cmd: (0, "42"))
-        self.assertEqual(readings["m"].value, 42.0)
+class ReadingsContractTests(unittest.TestCase):
+    def payload(self, document: dict, *, observed: str = "2026-08-20T08:00:00Z") -> dict:
+        return {
+            "schema": P.READINGS_SCHEMA,
+            "document": P.document_identity(document),
+            "observedAt": "2026-08-20T09:00:00Z",
+            "revision": "git:0123456789abcdef",
+            "readings": {
+                "gate_fail_open": {
+                    "observedAt": observed,
+                    "activeSince": "2026-08-19T09:00:00Z",
+                    "producerRef": "priority-probe gate-fail-open-count",
+                    "value": 1,
+                }
+            },
+        }
 
-    def test_unparseable_producer_output_yields_no_reading(self) -> None:
-        d = {"signals": [{"name": "m", "kind": "metric", "producer": "x"}]}
-        self.assertIsNone(P.probe(d, ROOT, runner=lambda cmd: (0, "not a number"))["m"].value)
+    def test_readings_are_bound_to_document_producer_revision_and_time(self) -> None:
+        document = doc()
+        envelope = P.load_readings(document, self.payload(document))
+        self.assertEqual(envelope.revision, "git:0123456789abcdef")
+        self.assertEqual(envelope.readings["gate_fail_open"].observed_age_seconds, 3600)
+        self.assertEqual(envelope.readings["gate_fail_open"].age_seconds, 86400)
+        self.assertEqual(
+            envelope.readings["gate_fail_open"].producer_ref,
+            "priority-probe gate-fail-open-count",
+        )
 
-    def test_failing_producer_yields_no_reading(self) -> None:
-        d = {"signals": [{"name": "m", "kind": "metric", "producer": "x"}]}
+    def test_wrong_document_digest_is_rejected(self) -> None:
+        document = doc()
+        payload = self.payload(document)
+        payload["document"]["digest"] = "sha256:" + "0" * 64
+        with self.assertRaisesRegex(ValueError, "document binding"):
+            P.load_readings(document, payload)
 
-        def boom(cmd):
-            raise OSError("no such tool")
+    def test_wrong_producer_is_rejected(self) -> None:
+        document = doc()
+        payload = self.payload(document)
+        payload["readings"]["gate_fail_open"]["producerRef"] = "another-producer"
+        with self.assertRaisesRegex(ValueError, "producer binding"):
+            P.load_readings(document, payload)
 
-        self.assertIsNone(P.probe(d, ROOT, runner=boom)["m"].value)
+    def test_unknown_signal_is_rejected(self) -> None:
+        document = doc()
+        payload = self.payload(document)
+        payload["readings"]["ghost"] = payload["readings"].pop("gate_fail_open")
+        with self.assertRaisesRegex(ValueError, "invalid readings"):
+            P.load_readings(document, payload)
+
+    def test_stale_reading_does_not_fire(self) -> None:
+        document = doc()
+        payload = self.payload(document, observed="2026-08-20T00:00:00Z")
+        envelope = P.load_readings(document, payload)
+        item = next(
+            value
+            for value in P.evaluate(document, envelope.readings)
+            if value.id == "honest_gates"
+        )
+        self.assertEqual(item.effective, item.base)
+
+    def test_active_duration_is_independent_from_evidence_freshness(self) -> None:
+        document = doc()
+        payload = self.payload(document, observed="2026-08-20T08:59:00Z")
+        envelope = P.load_readings(document, payload)
+        reading = envelope.readings["gate_fail_open"]
+        self.assertEqual(reading.observed_age_seconds, 60)
+        self.assertEqual(reading.age_seconds, 86400)
+
+    def test_ranking_receipt_is_deterministic_and_non_authorizing(self) -> None:
+        document = doc()
+        envelope = P.load_readings(document, self.payload(document))
+        evaluated = P.evaluate(document, envelope.readings)
+        first = P.ranking_receipt(document, evaluated, envelope)
+        second = P.ranking_receipt(document, evaluated, envelope)
+        self.assertEqual(first, second)
+        self.assertFalse(first["executionAuthorized"])
+        digest = first.pop("receiptDigest")
+        self.assertEqual(digest, P.canonical_digest(first))
 
 
-if __name__ == "__main__":
-    unittest.main()
+class CliContractTests(unittest.TestCase):
+    def test_stable_package_namespace_is_explicit(self) -> None:
+        self.assertEqual(PUBLIC.__version__, "0.1.0.dev0")
+        self.assertIs(PUBLIC.evaluate, P.evaluate)
+        self.assertNotIn("argparse", PUBLIC.__all__)
+
+    def test_format_is_accepted_after_the_subcommand(self) -> None:
+        output = StringIO()
+        with redirect_stdout(output):
+            status = P.main(["rank", str(EXAMPLE), "--format", "json"])
+        self.assertEqual(status, 0)
+        self.assertIsInstance(json.loads(output.getvalue()), list)
+
+    def test_probe_flag_is_not_exposed_by_the_pure_cli(self) -> None:
+        with redirect_stderr(StringIO()), self.assertRaises(SystemExit):
+            P.main(["rank", str(EXAMPLE), "--probe"])
+
+    def test_receipt_command_accepts_a_versioned_readings_file(self) -> None:
+        document = doc()
+        payload = ReadingsContractTests().payload(document)
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "readings.json"
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            output = StringIO()
+            with redirect_stdout(output):
+                status = P.main(["receipt", str(EXAMPLE), "--readings", str(path)])
+        receipt = json.loads(output.getvalue())
+        self.assertEqual(status, 0)
+        self.assertEqual(receipt["schema"], P.RANKING_SCHEMA)
 
 
 class SchemaAgreementTests(unittest.TestCase):
@@ -341,12 +435,26 @@ class SchemaAgreementTests(unittest.TestCase):
         self.assertTrue(emitted)
         self.assertEqual(emitted - declared, set())
 
+    def test_readings_and_ranking_receipts_match_their_schemas(self) -> None:
+        import jsonschema
+
+        document = doc()
+        payload = ReadingsContractTests().payload(document)
+        readings_schema = json.loads((ROOT / "schemas" / "readings.schema.json").read_text())
+        ranking_schema = json.loads((ROOT / "schemas" / "ranking.schema.json").read_text())
+        jsonschema.validate(payload, readings_schema)
+        envelope = P.load_readings(document, payload)
+        receipt = P.ranking_receipt(document, P.evaluate(document, envelope.readings), envelope)
+        jsonschema.validate(receipt, ranking_schema)
+
 
 class AbstractionTests(unittest.TestCase):
     """The pack must not name any adopter in a normative surface (AGENTS.md rule 1)."""
 
     NORMATIVE = ["docs/STANDARD.md", "docs/GRAMMAR.md", "docs/COMPLEMENTARITY.md",
-                 "docs/TRIGGERS.md", "schemas/priority.schema.json", "src/priority.py"]
+                 "docs/TRIGGERS.md", "schemas/priority.schema.json",
+                 "schemas/readings.schema.json", "schemas/ranking.schema.json",
+                 "src/priority.py"]
 
     def test_no_adopter_names_in_normative_surfaces(self) -> None:
         forbidden = ("subactor", "semcod", "autogrammar", "wellmanifest/offer")
@@ -354,3 +462,7 @@ class AbstractionTests(unittest.TestCase):
             text = (ROOT / relative).read_text().lower()
             for name in forbidden:
                 self.assertNotIn(name, text, f"{relative} names {name}")
+
+
+if __name__ == "__main__":
+    unittest.main()

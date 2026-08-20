@@ -88,6 +88,11 @@ where a number comes from and a missing producer is a finding rather than a
 silent zero. A rule whose signal has no reading does not fire: absence of
 evidence never raises a priority.
 
+The producer reference is opaque data, not executable text. Producer execution
+belongs to an adopter-owned runtime with an explicit allowlist. The evaluator is
+a pure function of the priority document and a versioned readings envelope bound
+to the document digest, revision, observation time, and declared producers.
+
 ## 5. Complementarity
 
 Priorities are not independent, and ranking them one at a time produces batches
@@ -124,7 +129,9 @@ that is a question for a human, not an optimization to solve.
 
 Agents do not share a configuration format, and no standard will make them. The
 document is therefore the authority and every agent-facing file is a
-**projection** of it — generated, never hand-edited, and checked for drift.
+**projection** of it — proposed as exact bytes, never hand-edited inside its
+managed block, and checked for drift. Applying or splicing the proposal is a
+separate adopter-owned effect.
 
 This is the same rule the ecosystem already applies to descriptions: the
 generated artifact is a projection of the AST, and a divergent projection is a

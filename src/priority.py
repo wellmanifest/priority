@@ -13,15 +13,20 @@ taken.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import math
 import re
 import sys
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 SCHEMA = "wellmanifest.priority/v1"
+READINGS_SCHEMA = "wellmanifest.priority/readings/v1"
+RANKING_SCHEMA = "wellmanifest.priority/ranking/v1"
 
 TIERS = ("floor", "standard", "opportunistic")
 #: Lexicographic bands. A lower index always outranks a higher one, whatever the
@@ -55,6 +60,35 @@ def parse_duration(text: str) -> int:
     if not match:
         raise ValueError(f"malformed duration: {text!r}")
     return int(match.group(1)) * _DURATION_SECONDS[match.group(2)]
+
+
+def canonical_digest(value: Any) -> str:
+    """Return the contract digest of a JSON-compatible value."""
+    encoded = json.dumps(
+        value, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    return "sha256:" + hashlib.sha256(encoded).hexdigest()
+
+
+def document_identity(document: Mapping[str, Any]) -> dict[str, str]:
+    """Bind a derived artifact to the exact canonical priority document."""
+    return {
+        "id": str(document.get("id", "")),
+        "version": str(document.get("version", "")),
+        "digest": canonical_digest(document),
+    }
+
+
+def _timestamp(value: Any) -> datetime:
+    if not isinstance(value, str) or not value or len(value) > 40:
+        raise ValueError("invalid readings contract")
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ValueError("invalid readings contract") from exc
+    if parsed.tzinfo is None:
+        raise ValueError("invalid readings contract")
+    return parsed.astimezone(timezone.utc)
 
 
 @dataclass
@@ -532,8 +566,136 @@ class Reading:
     """One signal observation."""
 
     value: float | None = None
+    # How long the observed condition/event/schedule has been active. This is
+    # semantic input for FOR/stale/elapsed and is independent of evidence age.
     age_seconds: float = 0.0
+    # How old the observation itself is. SIGNAL WINDOW applies only here.
+    observed_age_seconds: float = 0.0
     changed: bool = False
+    observed_at: str | None = None
+    active_since: str | None = None
+    producer_ref: str | None = None
+
+
+@dataclass(frozen=True)
+class ReadingsEnvelope:
+    """Validated observations bound to one document and source revision."""
+
+    observed_at: str
+    revision: str
+    readings: Mapping[str, Reading]
+    payload: Mapping[str, Any]
+
+    @property
+    def digest(self) -> str:
+        return canonical_digest(self.payload)
+
+    def receipt_ref(self) -> dict[str, str]:
+        return {
+            "digest": self.digest,
+            "observedAt": self.observed_at,
+            "revision": self.revision,
+        }
+
+
+def load_readings(
+    document: Mapping[str, Any], payload: Any
+) -> ReadingsEnvelope:
+    """Validate and normalize a revision-bound readings/v1 document.
+
+    Producers run outside this library. The evaluator accepts their typed,
+    digest-bound observations and rejects unknown signals, producer drift,
+    future timestamps, non-finite numbers, and a mismatched document binding.
+    """
+    if not isinstance(payload, Mapping) or set(payload) != {
+        "schema", "document", "observedAt", "revision", "readings"
+    }:
+        raise ValueError("invalid readings contract")
+    if payload.get("schema") != READINGS_SCHEMA:
+        raise ValueError("invalid readings contract")
+
+    subject = payload.get("document")
+    if not isinstance(subject, Mapping) or set(subject) != {"id", "version", "digest"}:
+        raise ValueError("invalid readings contract")
+    if dict(subject) != document_identity(document):
+        raise ValueError("readings document binding mismatch")
+
+    revision = payload.get("revision")
+    if not isinstance(revision, str) or not revision or len(revision) > 240:
+        raise ValueError("invalid readings contract")
+    envelope_time = _timestamp(payload.get("observedAt"))
+    signals = {item["name"]: item for item in document.get("signals") or []}
+    raw_readings = payload.get("readings")
+    if not isinstance(raw_readings, Mapping):
+        raise ValueError("invalid readings contract")
+
+    normalized_payload = {
+        "schema": READINGS_SCHEMA,
+        "document": dict(subject),
+        "observedAt": payload["observedAt"],
+        "revision": revision,
+        "readings": {},
+    }
+    readings: dict[str, Reading] = {}
+    for name, raw in sorted(raw_readings.items()):
+        if name not in signals or not isinstance(raw, Mapping):
+            raise ValueError("invalid readings contract")
+        if not {"observedAt", "producerRef"} <= set(raw) <= {
+            "observedAt", "activeSince", "producerRef", "value", "changed"
+        }:
+            raise ValueError("invalid readings contract")
+        producer = raw.get("producerRef")
+        if producer != signals[name].get("producer"):
+            raise ValueError("readings producer binding mismatch")
+        observed_time = _timestamp(raw.get("observedAt"))
+        if observed_time > envelope_time:
+            raise ValueError("invalid readings contract")
+        active_since = raw.get("activeSince")
+        active_time = _timestamp(active_since) if active_since is not None else None
+        if active_time is not None and active_time > observed_time:
+            raise ValueError("invalid readings contract")
+        value = raw.get("value")
+        if value is not None:
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise ValueError("invalid readings contract")
+            value = float(value)
+            if not math.isfinite(value):
+                raise ValueError("invalid readings contract")
+        changed = raw.get("changed", False)
+        if not isinstance(changed, bool):
+            raise ValueError("invalid readings contract")
+        age = max(0.0, (envelope_time - observed_time).total_seconds())
+        normalized_item: dict[str, Any] = {
+            "observedAt": raw["observedAt"],
+            "producerRef": producer,
+        }
+        if active_since is not None:
+            normalized_item["activeSince"] = active_since
+        if "value" in raw:
+            normalized_item["value"] = value
+        if "changed" in raw:
+            normalized_item["changed"] = changed
+        normalized_payload["readings"][name] = normalized_item
+        readings[name] = Reading(
+            value=value,
+            age_seconds=(
+                max(0.0, (envelope_time - active_time).total_seconds())
+                if active_time is not None
+                else 0.0
+            ),
+            observed_age_seconds=age,
+            changed=changed,
+            observed_at=raw["observedAt"],
+            active_since=active_since,
+            producer_ref=producer,
+        )
+
+    return ReadingsEnvelope(
+        observed_at=str(payload["observedAt"]),
+        revision=revision,
+        readings=readings,
+        payload=normalized_payload,
+    )
 
 
 @dataclass
@@ -567,6 +729,23 @@ class Evaluated:
         }
 
 
+def ranking_receipt(
+    document: Mapping[str, Any],
+    evaluated: Sequence[Evaluated],
+    readings: ReadingsEnvelope | None = None,
+) -> dict[str, Any]:
+    """Build a deterministic receipt that cannot authorize execution."""
+    receipt: dict[str, Any] = {
+        "schema": RANKING_SCHEMA,
+        "document": document_identity(document),
+        "readings": readings.receipt_ref() if readings is not None else None,
+        "priorities": [item.as_dict() for item in evaluated],
+        "executionAuthorized": False,
+    }
+    receipt["receiptDigest"] = canonical_digest(receipt)
+    return receipt
+
+
 def _condition_holds(
     condition: Mapping[str, Any],
     signals: Mapping[str, Mapping[str, Any]],
@@ -584,6 +763,10 @@ def _condition_holds(
         return False
     reading = readings.get(name)
     kind = signal.get("kind")
+
+    if reading is not None and signal.get("window"):
+        if reading.observed_age_seconds > parse_duration(str(signal["window"])):
+            reading = None
 
     if reading is None or (kind == "metric" and reading.value is None):
         if signal.get("absent", "hold") != "zero":
@@ -899,6 +1082,7 @@ def project(
     document: Mapping[str, Any],
     evaluated: Sequence[Evaluated],
     targets: Mapping[str, str] | None = None,
+    readings: ReadingsEnvelope | None = None,
 ) -> dict[str, str]:
     """Render every agent-facing projection. Returns {path: content}."""
     targets = dict(targets or PROJECTION_TARGETS)
@@ -907,13 +1091,7 @@ def project(
     for name, path in targets.items():
         if name == "json":
             out[path] = json.dumps(
-                {
-                    "schema": "wellmanifest.priority/ranking/v1",
-                    "document": document.get("id"),
-                    "version": document.get("version"),
-                    "priorities": [item.as_dict() for item in evaluated],
-                },
-                indent=2,
+                ranking_receipt(document, evaluated, readings), indent=2
             ) + "\n"
         else:
             out[path] = block + "\n"
@@ -948,56 +1126,6 @@ def project_markdown_block(content: str) -> str:
 
 
 # --------------------------------------------------------------------------
-# signal probing
-# --------------------------------------------------------------------------
-
-
-def probe(document: Mapping[str, Any], root: Path, *, runner=None) -> dict[str, Reading]:
-    """Take a reading for each declared signal by running its producer.
-
-    A producer is an opaque shell command that prints a number (metric), or a
-    path (event). Keeping it opaque is what keeps this pack abstract: the tools
-    that produce quality numbers are somebody else's, and naming them here would
-    couple the standard to a toolchain.
-    """
-    import subprocess
-    import time
-
-    def _run(command: str) -> tuple[int, str]:
-        completed = subprocess.run(
-            command, shell=True, cwd=root, capture_output=True, text=True, timeout=120
-        )
-        return completed.returncode, completed.stdout.strip()
-
-    runner = runner or _run
-    readings: dict[str, Reading] = {}
-    now = time.time()
-    for signal in document.get("signals") or []:
-        name, kind, producer = signal["name"], signal["kind"], signal.get("producer", "")
-        if kind == "event":
-            target = root / producer
-            if target.exists():
-                mtime = target.stat().st_mtime
-                readings[name] = Reading(value=None, age_seconds=now - mtime, changed=(now - mtime) < 60)
-            else:
-                readings[name] = Reading()
-            continue
-        try:
-            code, output = runner(producer)
-        except Exception:
-            readings[name] = Reading()
-            continue
-        if code != 0 and not output:
-            readings[name] = Reading()
-            continue
-        try:
-            readings[name] = Reading(value=float(output.splitlines()[-1].strip()))
-        except (ValueError, IndexError):
-            readings[name] = Reading()
-    return readings
-
-
-# --------------------------------------------------------------------------
 # CLI
 # --------------------------------------------------------------------------
 
@@ -1020,17 +1148,21 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--format", default="text", choices=["text", "json"])
     sub = parser.add_subparsers(dest="command", required=True)
 
-    for name in ("validate", "render", "rank", "matrix", "select", "project", "check"):
+    for name in ("validate", "render", "rank", "matrix", "select", "receipt", "project", "check"):
         child = sub.add_parser(name)
         child.add_argument("document", type=Path)
         child.add_argument("--root", type=Path, default=Path("."))
-        if name in {"rank", "select", "project", "check"}:
-            child.add_argument("--probe", action="store_true", help="run producers to take readings")
-            child.add_argument("--readings", type=Path, help="JSON file of {signal: value}")
+        child.add_argument(
+            "--format", choices=("text", "json"), default=argparse.SUPPRESS
+        )
+        if name in {"rank", "select", "receipt", "project", "check"}:
+            child.add_argument(
+                "--readings",
+                type=Path,
+                help="wellmanifest.priority/readings/v1 JSON envelope",
+            )
         if name == "select":
             child.add_argument("--capacity", type=int, default=3)
-        if name == "project":
-            child.add_argument("--write", action="store_true")
 
     args = parser.parse_args(argv)
     document = _load(args.document)
@@ -1048,14 +1180,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
 
     readings: dict[str, Reading] = {}
-    if getattr(args, "probe", False):
-        readings = probe(document, args.root)
-    elif getattr(args, "readings", None):
+    envelope: ReadingsEnvelope | None = None
+    if getattr(args, "readings", None):
         raw = json.loads(args.readings.read_text())
-        readings = {
-            name: Reading(**value) if isinstance(value, dict) else Reading(value=float(value))
-            for name, value in raw.items()
-        }
+        envelope = load_readings(document, raw)
+        readings = dict(envelope.readings)
 
     evaluated = evaluate(document, readings)
     matrix = complementarity(document)
@@ -1094,18 +1223,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                 print(f"{item.tier:14s} {item.effective:8.1f}  {item.id} — {item.intent}")
         return 0
 
-    rendered = project(document, evaluated)
+    if args.command == "receipt":
+        print(json.dumps(ranking_receipt(document, evaluated, envelope), indent=2))
+        return 0
+
+    rendered = project(document, evaluated, readings=envelope)
     if args.command == "project":
-        if getattr(args, "write", False):
-            for path, content in rendered.items():
-                target = args.root / path
-                target.parent.mkdir(parents=True, exist_ok=True)
-                if path.endswith(".json"):
-                    target.write_text(content, encoding="utf-8")
-                else:
-                    existing = target.read_text(encoding="utf-8") if target.exists() else ""
-                    target.write_text(splice(existing, project_markdown_block(content)), encoding="utf-8")
-                print(f"wrote {path}")
+        if args.format == "json":
+            print(json.dumps(rendered, indent=2))
         else:
             for path, content in rendered.items():
                 print(f"--- {path}")

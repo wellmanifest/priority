@@ -14,9 +14,9 @@ ADOPT wellmanifest/{dsl, new-project, project-ssot}.
 3. `unknownPolicy` is `reject`.
 4. A watcher, timer, or daemon implementing `docs/TRIGGERS.md` is a
    `runtime_service` and **must not** home here.
-5. `schemas/priority.schema.json` is a normative source and must stay in
-   agreement with `src/priority.py`. A schema nothing executes is a dead schema;
-   the test suite asserts the two agree on the shipped examples.
+5. `schemas/{priority,readings,ranking}.schema.json` are normative sources and
+   must stay in agreement with `src/priority.py`. A schema nothing executes is a
+   dead schema; the test suite asserts the contracts agree on shipped examples.
 6. Every finding code declared in `dsl-manifest.json` has a document under
    `docs/ERROR/` or `docs/CRITICAL/` explaining *why* it is a finding, not only
    what triggered it.

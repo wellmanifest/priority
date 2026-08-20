@@ -16,4 +16,6 @@ Someone edited an agent file by hand inside the managed block, or the document c
 
 ## Resolution
 
-Run `priority project --write` to regenerate, then commit the result. Never hand-edit inside the managed block.
+Run `priority project` to inspect the proposed bytes, then use an adopter-owned,
+reviewed workflow to splice or replace the projection. Commit the accepted
+result. Never hand-edit inside the managed block.

@@ -7,17 +7,27 @@
 set -eu
 
 DOC="${PRIORITY_DOCUMENT:-priority.dsl}"
+READINGS="${PRIORITY_READINGS:-.priority/readings.json}"
 [ -f "$DOC" ] || exit 0
+mkdir -p .priority
 
-# Reuse readings inside their declared window; --probe re-takes only what expired.
-priority rank "$DOC" --probe --format json > .priority/readings.json 2>/dev/null || exit 0
+# Producer execution is an earlier, adopter-owned step. Evaluation failures are
+# fail-closed here: otherwise a broken evaluator would silently disable the floor.
+if [ -f "$READINGS" ]; then
+    priority --format json rank "$DOC" --readings "$READINGS" > .priority/ranking.json
+else
+    priority --format json rank "$DOC" > .priority/ranking.json
+fi || {
+    echo "priority evaluation failed; floor state is unknown" >&2
+    exit 1
+}
 
 UNMET=$(python3 - <<'PY'
 import json
 try:
-    items = json.load(open(".priority/readings.json"))
+    items = json.load(open(".priority/ranking.json"))
 except Exception:
-    raise SystemExit(0)
+    raise SystemExit(2)
 blocking = [i for i in items if i["tier"] == "floor" and not i["satisfied"] and not i["retired"]]
 for item in blocking:
     print(f"BLOCKED  {item['id']} — {item['intent']}")

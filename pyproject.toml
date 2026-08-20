@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wellmanifest-priority"
+version = "0.1.0.dev0"
+description = "Propose-only priority documents, deterministic ranking, and conformance contracts"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "Apache-2.0"}
+authors = [{name = "Wellmanifest"}]
+dependencies = []
+
+[project.optional-dependencies]
+test = ["jsonschema>=4.23"]
+
+[project.scripts]
+priority = "priority:main"
+wellmanifest-priority = "priority:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+py-modules = ["priority"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.unittest]
+start-directory = "tests"
+

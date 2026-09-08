@@ -3,7 +3,7 @@
   "schema": "wellmanifest.dsl/manifest/v1",
   "id": "wellmanifest.priority",
   "name": "Wellmanifest priority and intent-evolution DSL",
-  "version": "0.1.0-dev",
+  "version": "0.1.1-dev",
   "status": "experimental",
   "purpose": "Declare standing priorities, the signals that reweight them, and the amendments by which the intent itself is revised. Propose-only: it ranks and explains, it never edits.",
   "domain": "software-prioritization",
@@ -83,7 +83,8 @@
     "naturalLanguage": "typed-source-only",
     "sourceSchema": "wellmanifest.priority/v1",
     "modelAuthority": "none",
-    "strict": true
+    "strict": true,
+    "decisionProtocol": "none"
   },
   "documentation": {
     "vocabularyKind": "commands",

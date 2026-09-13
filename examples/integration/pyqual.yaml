@@ -7,15 +7,15 @@
 custom_tools:
   - name: priority
     binary: priority
-    command: "priority check ${PRIORITY_DOCUMENT:-priority.dsl} --format json > .priority/findings.json"
+    command: "priority --format json check ${PRIORITY_DOCUMENT:-priority.dsl} --readings ${PRIORITY_READINGS:-.priority/readings.json} > .priority/findings.json"
     output: .priority/findings.json
-    allow_failure: true
+    allow_failure: false
 
   - name: priority-floor
     binary: priority
-    command: "priority rank ${PRIORITY_DOCUMENT:-priority.dsl} --probe --format json > .priority/ranking.json"
+    command: "priority --format json receipt ${PRIORITY_DOCUMENT:-priority.dsl} --readings ${PRIORITY_READINGS:-.priority/readings.json} > .priority/ranking.json"
     output: .priority/ranking.json
-    allow_failure: true
+    allow_failure: false
 
 stages:
   - name: priority

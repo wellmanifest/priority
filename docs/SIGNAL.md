@@ -15,9 +15,14 @@ SIGNAL <name> metric|event|schedule "<producer>"
 
 ## Inputs
 
-`producer` is an opaque command (metric), a path (event), or a cadence (schedule). Keeping it opaque is what keeps this pack abstract: the tools that produce quality numbers belong to their owners, and naming them here would couple the standard to a toolchain.
+`producer` is an opaque reference to a metric source, event path, or cadence. It
+is never interpreted as shell text by the evaluator. An adopter-owned runtime
+resolves references through an explicit allowlist. Keeping it opaque is what
+keeps this pack abstract: the tools that produce quality numbers belong to their
+owners, and naming them here would couple the standard to a toolchain.
 
-`WINDOW` is how long a reading stays valid, which lets a frequent control loop skip re-running slow producers.
+`WINDOW` is how long a reading stays valid. A runtime may use it to avoid
+re-running slow producers; the evaluator treats an older observation as absent.
 
 `ABSENT` defaults to `hold`.
 

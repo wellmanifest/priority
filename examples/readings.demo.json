@@ -1,9 +1,61 @@
 {
-  "gate_fail_open": 1,
-  "digest_drift": 1,
-  "manifest_conformance": 35,
-  "adopters": 4,
-  "coverage": 37,
-  "open_claims": 0,
-  "standard_churn": {"value": null, "age_seconds": 3600, "changed": true}
+  "schema": "wellmanifest.priority/readings/v1",
+  "document": {
+    "id": "fleet.standardization",
+    "version": "0.1.0",
+    "digest": "sha256:626cd2de207c13e374c5c1bd896bc74ddd967a43733fdadd9945b703a3fee2e1"
+  },
+  "observedAt": "2026-08-20T08:00:00Z",
+  "revision": "git:example-head-20260820",
+  "readings": {
+    "adopters": {
+      "observedAt": "2026-08-20T08:00:00Z",
+      "activeSince": "2026-08-01T00:00:00Z",
+      "producerRef": "priority-probe adopter-count",
+      "value": 4
+    },
+    "coverage": {
+      "observedAt": "2026-08-20T08:00:00Z",
+      "activeSince": "2026-08-20T08:00:00Z",
+      "producerRef": "priority-probe coverage-pct",
+      "value": 37
+    },
+    "digest_drift": {
+      "observedAt": "2026-08-20T08:00:00Z",
+      "activeSince": "2026-08-19T08:00:00Z",
+      "producerRef": "priority-probe digest-drift-count",
+      "value": 1
+    },
+    "gate_fail_open": {
+      "observedAt": "2026-08-20T08:00:00Z",
+      "activeSince": "2026-08-20T07:00:00Z",
+      "producerRef": "priority-probe gate-fail-open-count",
+      "value": 1
+    },
+    "manifest_conformance": {
+      "observedAt": "2026-08-20T08:00:00Z",
+      "activeSince": "2026-08-20T08:00:00Z",
+      "producerRef": "priority-probe manifest-conformance-pct",
+      "value": 35
+    },
+    "open_claims": {
+      "observedAt": "2026-08-20T08:00:00Z",
+      "activeSince": "2026-08-20T08:00:00Z",
+      "producerRef": "priority-probe claimed-ticket-count",
+      "value": 0
+    },
+    "standard_churn": {
+      "observedAt": "2026-08-20T08:00:00Z",
+      "activeSince": "2026-08-20T07:00:00Z",
+      "producerRef": "docs/STANDARD.md",
+      "value": null,
+      "changed": true
+    },
+    "sweep": {
+      "observedAt": "2026-08-20T08:00:00Z",
+      "activeSince": "2026-08-20T07:55:00Z",
+      "producerRef": "every 5m",
+      "value": null
+    }
+  }
 }

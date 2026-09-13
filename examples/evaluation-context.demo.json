@@ -1,0 +1,23 @@
+{
+  "schema": "wellmanifest.priority/evaluation-context/v1",
+  "document": {
+    "id": "fleet.standardization",
+    "version": "0.1.0",
+    "digest": "sha256:626cd2de207c13e374c5c1bd896bc74ddd967a43733fdadd9945b703a3fee2e1"
+  },
+  "readings": {
+    "digest": "sha256:c723b30595d3887cd35fa5f83772c085c34b55809aa1ddbaea0402b41118cd43",
+    "observedAt": "2026-08-20T08:00:00Z",
+    "revision": "git:example-head-20260820"
+  },
+  "observedAt": "2026-08-20T08:00:01Z",
+  "revision": "scheduler:example-run-20260820",
+  "ages": {
+    "honest_gates": 2419200,
+    "digest_truth": 86400
+  },
+  "idle": {
+    "standard_is_abstract": 2419200,
+    "test_depth": 1209600
+  }
+}

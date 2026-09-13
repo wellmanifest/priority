@@ -4,6 +4,24 @@ All notable changes to this project are documented in this file.
 
 ## [0.1.0-dev]
 
+- Add deterministic composition of disjoint partial readings envelopes with a
+  source-bound, non-authorizing `readings-composition/v1` receipt.
+- Add `evaluation-attestation/v1` for short-lived, replay-resistant external
+  evaluator provenance with protected signature verification and exact v2
+  input/output bindings.
+- Add digest-bound `evaluation-context/v1` inputs for elapsed age and idle
+  durations, and fully input-bound, non-authorizing `ranking/v2` receipts.
+- Keep `ranking/v1` compatible for callers that do not supply time-dependent
+  evaluation context.
+- Package the evaluator as `wellmanifest-priority` with stable import and CLI
+  entry points.
+- Add digest- and revision-bound `readings/v1` inputs and deterministic,
+  non-authorizing `ranking/v1` receipts.
+- Keep producer execution outside the evaluator; integrations supply readings
+  from an explicit runtime allowlist instead of executing producer text as a
+  shell command.
+- Make projection strictly propose-only and accept `--format` consistently
+  before or after a subcommand.
 - Bootstrap the priority domain pack on wellmanifest/dsl: `DOCUMENT PRIORITY`
   text form, JSON AST, JSON Schema, validator, evaluator, complementarity, and
   agent-facing projections.

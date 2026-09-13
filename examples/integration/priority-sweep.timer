@@ -1,10 +1,10 @@
 [Unit]
-Description=Re-evaluate priorities and refresh agent projections
+Description=Re-evaluate priorities and report proposed projection drift
 
 [Timer]
 # Five minutes is short enough to catch an expiry the same working session, and
-# long enough that signals with a multi-hour WINDOW are reused rather than
-# re-taken. The cost of a tick is dominated by producers that actually expired.
+# long enough that an adopter runtime can reuse observations whose WINDOW has
+# not expired. Producer collection remains outside the evaluator.
 OnBootSec=2min
 OnUnitActiveSec=5min
 AccuracySec=30s

@@ -4,8 +4,8 @@ Description=Priority sweep (read-only)
 [Service]
 Type=oneshot
 WorkingDirectory=%h/workspace
-# propose-only: the sweep refreshes the ranking and the projections, and reports
-# drift. It never blocks and never edits anything outside the managed blocks.
-ExecStart=/usr/bin/env priority project priority.dsl --probe --write
-ExecStart=/usr/bin/env priority check priority.dsl
+# propose-only: an adopter-owned producer step writes the typed readings file.
+# The evaluator emits a receipt and reports projection drift; it edits nothing.
+ExecStart=/usr/bin/env priority receipt priority.dsl --readings .priority/readings.json
+ExecStart=/usr/bin/env priority check priority.dsl --readings .priority/readings.json
 SuccessExitStatus=0 1

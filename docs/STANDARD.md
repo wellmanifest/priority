@@ -88,6 +88,34 @@ where a number comes from and a missing producer is a finding rather than a
 silent zero. A rule whose signal has no reading does not fire: absence of
 evidence never raises a priority.
 
+The producer reference is opaque data, not executable text. Producer execution
+belongs to an adopter-owned runtime with an explicit allowlist. The evaluator is
+a pure function of the priority document, a versioned readings envelope and,
+when time-based terms are used, a versioned evaluation context.
+
+When signals have independent producers, each producer MAY emit a partial
+readings envelope. A compositor MUST validate every partial envelope against
+the same document, reject duplicate signal ownership and future observations,
+and emit a non-authorizing composition receipt that binds every source digest,
+revision and observation time to the final readings digest. It MUST NOT execute
+producer references or silently choose between conflicting readings.
+
+The evaluation context contains only elapsed `ages` and `idle` durations. It is
+bound to the exact document and readings digest, revision and observation time.
+This makes escalation, decay and starvation independently reproducible: an
+evaluator cannot use a hidden clock or an unrecorded last-touch time and still
+claim the same input identity. Ranking receipt v2 binds the context digest in
+addition to the document and readings; it remains non-authorizing.
+
+An evaluation attestation MAY bind a ranking v2 receipt to an external
+evaluator identity and immutable implementation digest. It MUST bind the exact
+document, readings, context and ranking digest; expire within 15 minutes; name
+one exact audience; carry a single-use nonce; and be signed by an allowlisted
+issuer. Signature verification and atomic nonce consumption MUST occur at a
+separately controlled protected boundary. Repository code, an embedded digest
+or an issuer label alone is not trust evidence. An evaluation attestation MUST
+carry `executionAuthorized: false` and cannot grant an effect.
+
 ## 5. Complementarity
 
 Priorities are not independent, and ranking them one at a time produces batches
@@ -124,7 +152,9 @@ that is a question for a human, not an optimization to solve.
 
 Agents do not share a configuration format, and no standard will make them. The
 document is therefore the authority and every agent-facing file is a
-**projection** of it — generated, never hand-edited, and checked for drift.
+**projection** of it — proposed as exact bytes, never hand-edited inside its
+managed block, and checked for drift. Applying or splicing the proposal is a
+separate adopter-owned effect.
 
 This is the same rule the ecosystem already applies to descriptions: the
 generated artifact is a projection of the AST, and a divergent projection is a

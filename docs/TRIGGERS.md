@@ -1,8 +1,8 @@
 # Control loop — when a document is re-evaluated
 
-A priority document is a pure function of itself plus a set of readings. It is
-worth exactly as much as the freshness of those readings, so the standard defines
-*when* they are taken, not just how.
+A priority document is a pure function of itself plus readings and an optional
+evaluation context. It is worth exactly as much as the freshness and provenance
+of those inputs, so the standard defines *when* they are taken, not just how.
 
 ## Three cadences, and why not one
 
@@ -19,12 +19,13 @@ sees the edit but not the world outside the repository.
 
 ## Cost discipline
 
-The interval loop re-runs producers, and producers are other people's tools that
-may be slow. Two rules keep it honest:
+An adopter-owned runtime resolves declared producer references through an
+explicit allowlist. The evaluator never executes them. Producers may be slow, so
+two rules keep the runtime honest:
 
-1. **Respect the window.** A signal declares `WINDOW`; a reading younger than its
-   window is reused rather than re-taken. A five-minute tick over signals with a
-   six-hour window costs nothing after the first pass.
+1. **Respect the window.** A signal declares `WINDOW`; the runtime may reuse a
+   reading younger than its window rather than re-take it. The evaluator treats
+   an older reading as absent.
 2. **Never block on a producer.** A producer that fails or times out yields *no
    reading*, and a missing reading fires nothing. A slow tool degrades the
    ranking's precision; it must never degrade its availability, and it must never
@@ -38,20 +39,27 @@ propose-only effect model. They differ only in what they may block:
 - **Commit** may block, and only on an unsatisfied `floor` item. Blocking a
   commit on a `standard` item trains people to pass `--no-verify`, after which
   the floor items stop being enforced too.
-- **Interval** never blocks. It refreshes the ranking and the projections, and
-  reports drift.
+- **Interval** never blocks. It emits fresh readings and a ranking receipt, then
+  reports proposed projection drift. When elapsed durations affect rank, it also
+  emits a context envelope and ranking receipt v2.
 - **Watch** never blocks. It updates freshness inputs — which surfaces were
   touched, and when — that the other two consume.
 
+The runtime computes elapsed durations once per run and records them as explicit
+seconds in `evaluation-context/v1`. It must not let two evaluators consult their
+own clocks or private filesystem history: that would make the same nominal run
+produce ranks that an independent validator cannot reproduce.
+
 ## The projection step
 
-Every cadence ends the same way: re-render the agent-facing projections and
-report any that drifted. This is what closes the loop between a measurement and
-the instruction an agent will read on its next turn.
+Every cadence ends the same way: render the proposed agent-facing projection
+bytes and report any drift. Applying those bytes is a separate, reviewed effect;
+evaluation itself never changes a repository.
 
 ## Placement
 
 A watcher or timer is a running process, so it is a `runtime_service` and must
 **not** home in a standards repository. This pack defines the contract —
-signals, readings, cadences, the propose-only constraint — and stops there. The
-process that implements it homes wherever runtime services home.
+signals, readings, evaluation context, cadences, the propose-only constraint —
+and stops there. The process that implements it homes wherever runtime services
+home.

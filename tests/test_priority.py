@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 import json
+import tempfile
 import unittest
+from datetime import datetime, timezone
+from contextlib import redirect_stderr, redirect_stdout
+from io import StringIO
 from pathlib import Path
 
 import priority as P
+import wellmanifest_priority as PUBLIC
 
 ROOT = Path(__file__).resolve().parents[1]
 EXAMPLE = ROOT / "examples" / "standardization.priority.dsl"
@@ -254,7 +259,9 @@ class ProjectionTests(unittest.TestCase):
     def test_json_projection_is_machine_readable(self) -> None:
         rendered = P.project(doc(), P.evaluate(doc(), {}))
         payload = json.loads(rendered[".priority/ranking.json"])
-        self.assertEqual(payload["document"], "fleet.standardization")
+        self.assertEqual(payload["document"]["id"], "fleet.standardization")
+        self.assertEqual(payload["document"]["digest"], P.canonical_digest(doc()))
+        self.assertFalse(payload["executionAuthorized"])
         self.assertTrue(payload["priorities"])
 
     def test_drift_is_detected_when_a_projection_is_missing(self) -> None:
@@ -267,27 +274,426 @@ class ProjectionTests(unittest.TestCase):
         self.assertTrue(all(f.code == "PRIORITY-PROJECTION-001" for f in problems))
 
 
-class ProbeTests(unittest.TestCase):
-    def test_producer_output_becomes_a_reading(self) -> None:
-        d = {"signals": [{"name": "m", "kind": "metric", "producer": "x"}]}
-        readings = P.probe(d, ROOT, runner=lambda cmd: (0, "42"))
-        self.assertEqual(readings["m"].value, 42.0)
+class ReadingsContractTests(unittest.TestCase):
+    def payload(self, document: dict, *, observed: str = "2026-08-20T08:00:00Z") -> dict:
+        return {
+            "schema": P.READINGS_SCHEMA,
+            "document": P.document_identity(document),
+            "observedAt": "2026-08-20T09:00:00Z",
+            "revision": "git:0123456789abcdef",
+            "readings": {
+                "gate_fail_open": {
+                    "observedAt": observed,
+                    "activeSince": "2026-08-19T09:00:00Z",
+                    "producerRef": "priority-probe gate-fail-open-count",
+                    "value": 1,
+                }
+            },
+        }
 
-    def test_unparseable_producer_output_yields_no_reading(self) -> None:
-        d = {"signals": [{"name": "m", "kind": "metric", "producer": "x"}]}
-        self.assertIsNone(P.probe(d, ROOT, runner=lambda cmd: (0, "not a number"))["m"].value)
+    def test_readings_are_bound_to_document_producer_revision_and_time(self) -> None:
+        document = doc()
+        envelope = P.load_readings(document, self.payload(document))
+        self.assertEqual(envelope.revision, "git:0123456789abcdef")
+        self.assertEqual(envelope.readings["gate_fail_open"].observed_age_seconds, 3600)
+        self.assertEqual(envelope.readings["gate_fail_open"].age_seconds, 86400)
+        self.assertEqual(
+            envelope.readings["gate_fail_open"].producer_ref,
+            "priority-probe gate-fail-open-count",
+        )
 
-    def test_failing_producer_yields_no_reading(self) -> None:
-        d = {"signals": [{"name": "m", "kind": "metric", "producer": "x"}]}
+    def test_wrong_document_digest_is_rejected(self) -> None:
+        document = doc()
+        payload = self.payload(document)
+        payload["document"]["digest"] = "sha256:" + "0" * 64
+        with self.assertRaisesRegex(ValueError, "document binding"):
+            P.load_readings(document, payload)
 
-        def boom(cmd):
-            raise OSError("no such tool")
+    def test_wrong_producer_is_rejected(self) -> None:
+        document = doc()
+        payload = self.payload(document)
+        payload["readings"]["gate_fail_open"]["producerRef"] = "another-producer"
+        with self.assertRaisesRegex(ValueError, "producer binding"):
+            P.load_readings(document, payload)
 
-        self.assertIsNone(P.probe(d, ROOT, runner=boom)["m"].value)
+    def test_unknown_signal_is_rejected(self) -> None:
+        document = doc()
+        payload = self.payload(document)
+        payload["readings"]["ghost"] = payload["readings"].pop("gate_fail_open")
+        with self.assertRaisesRegex(ValueError, "invalid readings"):
+            P.load_readings(document, payload)
+
+    def test_stale_reading_does_not_fire(self) -> None:
+        document = doc()
+        payload = self.payload(document, observed="2026-08-20T00:00:00Z")
+        envelope = P.load_readings(document, payload)
+        item = next(
+            value
+            for value in P.evaluate(document, envelope.readings)
+            if value.id == "honest_gates"
+        )
+        self.assertEqual(item.effective, item.base)
+
+    def test_active_duration_is_independent_from_evidence_freshness(self) -> None:
+        document = doc()
+        payload = self.payload(document, observed="2026-08-20T08:59:00Z")
+        envelope = P.load_readings(document, payload)
+        reading = envelope.readings["gate_fail_open"]
+        self.assertEqual(reading.observed_age_seconds, 60)
+        self.assertEqual(reading.age_seconds, 86400)
+
+    def test_ranking_receipt_is_deterministic_and_non_authorizing(self) -> None:
+        document = doc()
+        envelope = P.load_readings(document, self.payload(document))
+        evaluated = P.evaluate(document, envelope.readings)
+        first = P.ranking_receipt(document, evaluated, envelope)
+        second = P.ranking_receipt(document, evaluated, envelope)
+        self.assertEqual(first, second)
+        self.assertFalse(first["executionAuthorized"])
+        digest = first.pop("receiptDigest")
+        self.assertEqual(digest, P.canonical_digest(first))
 
 
-if __name__ == "__main__":
-    unittest.main()
+class ReadingsCompositionTests(unittest.TestCase):
+    def sources(self, document: dict) -> dict[str, P.ReadingsEnvelope]:
+        first_payload = ReadingsContractTests().payload(document)
+        second_payload = {
+            "schema": P.READINGS_SCHEMA,
+            "document": P.document_identity(document),
+            "observedAt": "2026-08-20T09:00:00Z",
+            "revision": "queue:snapshot:012345",
+            "readings": {
+                "coverage": {
+                    "observedAt": "2026-08-20T08:59:00Z",
+                    "producerRef": "priority-probe coverage-pct",
+                    "value": 37,
+                }
+            },
+        }
+        return {
+            "quality-producer": P.load_readings(document, first_payload),
+            "queue-producer": P.load_readings(document, second_payload),
+        }
+
+    def test_composes_disjoint_sources_with_exact_provenance(self) -> None:
+        document = doc()
+        sources = self.sources(document)
+        output, receipt = P.compose_readings(
+            document,
+            sources,
+            observed_at="2026-08-20T09:00:01Z",
+            revision="compositor:run-1",
+        )
+        self.assertEqual(set(output.readings), {"gate_fail_open", "coverage"})
+        self.assertEqual(
+            [source["id"] for source in receipt["sources"]],
+            ["quality-producer", "queue-producer"],
+        )
+        self.assertEqual(receipt["output"], output.receipt_ref())
+        self.assertFalse(receipt["executionAuthorized"])
+        unsigned = {key: value for key, value in receipt.items() if key != "receiptDigest"}
+        self.assertEqual(receipt["receiptDigest"], P.canonical_digest(unsigned))
+
+    def test_duplicate_and_future_sources_fail_closed(self) -> None:
+        document = doc()
+        sources = self.sources(document)
+        with self.assertRaisesRegex(ValueError, "duplicate signals"):
+            P.compose_readings(
+                document,
+                {"first": sources["quality-producer"], "second": sources["quality-producer"]},
+                observed_at="2026-08-20T09:00:01Z",
+                revision="compositor:run-1",
+            )
+        with self.assertRaisesRegex(ValueError, "future"):
+            P.compose_readings(
+                document,
+                sources,
+                observed_at="2026-08-20T08:59:59Z",
+                revision="compositor:run-1",
+            )
+
+    def test_composition_receipt_matches_schema(self) -> None:
+        import jsonschema
+
+        document = doc()
+        _, receipt = P.compose_readings(
+            document,
+            self.sources(document),
+            observed_at="2026-08-20T09:00:01Z",
+            revision="compositor:run-1",
+        )
+        schema = json.loads(
+            (ROOT / "schemas" / "readings-composition.schema.json").read_text()
+        )
+        jsonschema.validate(receipt, schema)
+
+
+class EvaluationContextTests(unittest.TestCase):
+    def payload(
+        self,
+        document: dict,
+        readings: P.ReadingsEnvelope | None,
+    ) -> dict:
+        return {
+            "schema": P.CONTEXT_SCHEMA,
+            "document": P.document_identity(document),
+            "readings": readings.receipt_ref() if readings is not None else None,
+            "observedAt": "2026-08-20T09:00:01Z",
+            "revision": "scheduler:run-1",
+            "ages": {"honest_gates": P.parse_duration("28d")},
+            "idle": {"standard_is_abstract": P.parse_duration("28d")},
+        }
+
+    def test_context_binds_every_time_dependent_input(self) -> None:
+        document = doc()
+        readings = P.load_readings(document, ReadingsContractTests().payload(document))
+        context = P.load_evaluation_context(document, self.payload(document, readings), readings)
+        ranked = P.evaluate(
+            document, readings.readings, ages=context.ages, idle=context.idle
+        )
+        receipt = P.ranking_receipt_v2(document, context, readings)
+
+        self.assertEqual(receipt["schema"], P.RANKING_SCHEMA_V2)
+        self.assertEqual(receipt["context"], context.receipt_ref())
+        self.assertFalse(receipt["executionAuthorized"])
+        unsigned = {key: value for key, value in receipt.items() if key != "receiptDigest"}
+        self.assertEqual(receipt["receiptDigest"], P.canonical_digest(unsigned))
+        self.assertGreater(
+            next(item for item in ranked if item.id == "honest_gates").effective,
+            next(
+                item for item in P.evaluate(document, readings.readings)
+                if item.id == "honest_gates"
+            ).effective,
+        )
+
+    def test_shipped_context_example_is_bound_to_shipped_readings(self) -> None:
+        document = doc()
+        readings = P.load_readings(
+            document,
+            json.loads((ROOT / "examples" / "readings.demo.json").read_text()),
+        )
+        context = P.load_evaluation_context(
+            document,
+            json.loads((ROOT / "examples" / "evaluation-context.demo.json").read_text()),
+            readings,
+        )
+        self.assertEqual(context.revision, "scheduler:example-run-20260820")
+        self.assertEqual(
+            P.ranking_receipt_v2(document, context, readings)["schema"],
+            P.RANKING_SCHEMA_V2,
+        )
+
+    def test_context_rejects_drift_and_unknown_priorities(self) -> None:
+        document = doc()
+        readings = P.load_readings(document, ReadingsContractTests().payload(document))
+        payload = self.payload(document, readings)
+        payload["readings"] = None
+        with self.assertRaisesRegex(ValueError, "readings binding"):
+            P.load_evaluation_context(document, payload, readings)
+
+        payload = self.payload(document, readings)
+        payload["ages"] = {"ghost": 1}
+        with self.assertRaisesRegex(ValueError, "priority mismatch"):
+            P.load_evaluation_context(document, payload, readings)
+
+    def test_context_rejects_negative_non_finite_and_future_binding(self) -> None:
+        document = doc()
+        readings = P.load_readings(document, ReadingsContractTests().payload(document))
+        for invalid in (-1, float("inf"), True):
+            payload = self.payload(document, readings)
+            payload["idle"] = {"honest_gates": invalid}
+            with self.subTest(invalid=invalid), self.assertRaisesRegex(
+                ValueError, "invalid evaluation context"
+            ):
+                P.load_evaluation_context(document, payload, readings)
+
+        payload = self.payload(document, readings)
+        payload["observedAt"] = "2026-08-20T08:59:59Z"
+        with self.assertRaisesRegex(ValueError, "invalid evaluation context"):
+            P.load_evaluation_context(document, payload, readings)
+
+
+class EvaluationAttestationTests(unittest.TestCase):
+    ISSUER = "priority-evaluator://reference/runtime"
+    IMPLEMENTATION = "sha256:" + "1" * 64
+    AUDIENCE = "queue://priority-ranking"
+
+    def fixture(self):
+        document = doc()
+        readings = P.load_readings(document, ReadingsContractTests().payload(document))
+        context = P.load_evaluation_context(
+            document, EvaluationContextTests().payload(document, readings), readings
+        )
+        receipt = P.ranking_receipt_v2(document, context, readings)
+        attestation = {
+            "schema": P.EVALUATION_ATTESTATION_SCHEMA,
+            "predicateType": P.EVALUATION_PREDICATE_TYPE,
+            "attestationId": "priority-attestation://reference/run-0001",
+            "issuer": {
+                "id": self.ISSUER,
+                "implementationDigest": self.IMPLEMENTATION,
+            },
+            "subject": {
+                "document": P.document_identity(document),
+                "readings": readings.receipt_ref(),
+                "context": context.receipt_ref(),
+                "ranking": {
+                    "schema": P.RANKING_SCHEMA_V2,
+                    "digest": receipt["receiptDigest"],
+                },
+            },
+            "validity": {
+                "issuedAt": "2026-08-20T09:00:02Z",
+                "expiresAt": "2026-08-20T09:10:02Z",
+            },
+            "antiReplay": {
+                "nonce": "0123456789abcdefghijklmn",
+                "audience": self.AUDIENCE,
+                "singleUse": True,
+            },
+            "signature": {
+                "scheme": "ed25519",
+                "keyId": "reference-key-v1",
+                "value": "dGVzdC1zaWduYXR1cmU=",
+            },
+            "executionAuthorized": False,
+        }
+        return document, readings, context, receipt, attestation
+
+    def verify(self, document, readings, context, receipt, attestation, **overrides):
+        arguments = {
+            "readings": readings,
+            "trusted_issuers": {self.ISSUER: {self.IMPLEMENTATION}},
+            "expected_audience": self.AUDIENCE,
+            "at": datetime(2026, 8, 20, 9, 5, tzinfo=timezone.utc),
+            "consumed_nonces": set(),
+            "signature_verifier": lambda payload, signature: bool(payload)
+            and signature["value"] == "dGVzdC1zaWduYXR1cmU=",
+        }
+        arguments.update(overrides)
+        return P.verify_evaluation_attestation(
+            document, context, receipt, attestation, **arguments
+        )
+
+    def test_exact_attestation_verifies_without_granting_execution(self) -> None:
+        document, readings, context, receipt, attestation = self.fixture()
+        verified = self.verify(document, readings, context, receipt, attestation)
+        self.assertEqual(verified.ranking_digest, receipt["receiptDigest"])
+        self.assertEqual(verified.issuer, self.ISSUER)
+        self.assertFalse(attestation["executionAuthorized"])
+        self.assertEqual(
+            verified.payload_digest,
+            P.canonical_digest(
+                {key: value for key, value in attestation.items() if key != "signature"}
+            ),
+        )
+
+    def test_ranking_context_and_subject_drift_fail_closed(self) -> None:
+        document, readings, context, receipt, attestation = self.fixture()
+        changed_receipt = json.loads(json.dumps(receipt))
+        changed_receipt["priorities"][0]["effective"] += 1
+        with self.assertRaisesRegex(ValueError, "ranking mismatch"):
+            self.verify(document, readings, context, changed_receipt, attestation)
+
+        changed_attestation = json.loads(json.dumps(attestation))
+        changed_attestation["subject"]["context"]["revision"] = "scheduler:other"
+        with self.assertRaisesRegex(ValueError, "subject mismatch"):
+            self.verify(document, readings, context, receipt, changed_attestation)
+
+    def test_trust_audience_time_replay_and_signature_fail_closed(self) -> None:
+        document, readings, context, receipt, attestation = self.fixture()
+        cases = (
+            ({"trusted_issuers": {}}, "untrusted"),
+            ({"expected_audience": "queue://other"}, "replay protection"),
+            ({"consumed_nonces": {attestation["antiReplay"]["nonce"]}}, "replay protection"),
+            ({"at": datetime(2026, 8, 20, 9, 11, tzinfo=timezone.utc)}, "not current"),
+            ({"signature_verifier": lambda payload, signature: False}, "signature verification"),
+        )
+        for overrides, message in cases:
+            with self.subTest(message=message), self.assertRaisesRegex(ValueError, message):
+                self.verify(
+                    document, readings, context, receipt, attestation, **overrides
+                )
+
+        attestation["validity"]["issuedAt"] = "2026-08-20T08:59:59Z"
+        with self.assertRaisesRegex(ValueError, "not current"):
+            self.verify(document, readings, context, receipt, attestation)
+
+    def test_schema_accepts_the_semantically_valid_fixture(self) -> None:
+        import jsonschema
+
+        *_, attestation = self.fixture()
+        schema = json.loads(
+            (ROOT / "schemas" / "evaluation-attestation.schema.json").read_text()
+        )
+        jsonschema.validate(attestation, schema)
+
+
+class CliContractTests(unittest.TestCase):
+    def test_stable_package_namespace_is_explicit(self) -> None:
+        self.assertEqual(PUBLIC.__version__, "0.1.0.dev0")
+        self.assertIs(PUBLIC.evaluate, P.evaluate)
+        self.assertIs(PUBLIC.load_evaluation_context, P.load_evaluation_context)
+        self.assertIs(PUBLIC.ranking_receipt_v2, P.ranking_receipt_v2)
+        self.assertEqual(PUBLIC.CONTEXT_SCHEMA, P.CONTEXT_SCHEMA)
+        self.assertEqual(PUBLIC.RANKING_SCHEMA_V2, P.RANKING_SCHEMA_V2)
+        self.assertEqual(
+            PUBLIC.EVALUATION_ATTESTATION_SCHEMA, P.EVALUATION_ATTESTATION_SCHEMA
+        )
+        self.assertIs(
+            PUBLIC.verify_evaluation_attestation, P.verify_evaluation_attestation
+        )
+        self.assertIs(PUBLIC.compose_readings, P.compose_readings)
+        self.assertEqual(
+            PUBLIC.READINGS_COMPOSITION_SCHEMA, P.READINGS_COMPOSITION_SCHEMA
+        )
+        self.assertNotIn("argparse", PUBLIC.__all__)
+
+    def test_format_is_accepted_after_the_subcommand(self) -> None:
+        output = StringIO()
+        with redirect_stdout(output):
+            status = P.main(["rank", str(EXAMPLE), "--format", "json"])
+        self.assertEqual(status, 0)
+        self.assertIsInstance(json.loads(output.getvalue()), list)
+
+    def test_probe_flag_is_not_exposed_by_the_pure_cli(self) -> None:
+        with redirect_stderr(StringIO()), self.assertRaises(SystemExit):
+            P.main(["rank", str(EXAMPLE), "--probe"])
+
+    def test_receipt_command_accepts_a_versioned_readings_file(self) -> None:
+        document = doc()
+        payload = ReadingsContractTests().payload(document)
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "readings.json"
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            output = StringIO()
+            with redirect_stdout(output):
+                status = P.main(["receipt", str(EXAMPLE), "--readings", str(path)])
+        receipt = json.loads(output.getvalue())
+        self.assertEqual(status, 0)
+        self.assertEqual(receipt["schema"], P.RANKING_SCHEMA)
+
+    def test_receipt_command_binds_evaluation_context(self) -> None:
+        document = doc()
+        readings_payload = ReadingsContractTests().payload(document)
+        readings = P.load_readings(document, readings_payload)
+        context_payload = EvaluationContextTests().payload(document, readings)
+        context = P.load_evaluation_context(document, context_payload, readings)
+        with tempfile.TemporaryDirectory() as temporary:
+            readings_path = Path(temporary) / "readings.json"
+            context_path = Path(temporary) / "context.json"
+            readings_path.write_text(json.dumps(readings_payload), encoding="utf-8")
+            context_path.write_text(json.dumps(context_payload), encoding="utf-8")
+            output = StringIO()
+            with redirect_stdout(output):
+                status = P.main([
+                    "receipt", str(EXAMPLE), "--readings", str(readings_path),
+                    "--context", str(context_path),
+                ])
+        receipt = json.loads(output.getvalue())
+        self.assertEqual(status, 0)
+        self.assertEqual(receipt["schema"], P.RANKING_SCHEMA_V2)
+        self.assertEqual(receipt["context"]["digest"], context.digest)
 
 
 class SchemaAgreementTests(unittest.TestCase):
@@ -341,12 +747,43 @@ class SchemaAgreementTests(unittest.TestCase):
         self.assertTrue(emitted)
         self.assertEqual(emitted - declared, set())
 
+    def test_readings_and_ranking_receipts_match_their_schemas(self) -> None:
+        import jsonschema
+
+        document = doc()
+        payload = ReadingsContractTests().payload(document)
+        readings_schema = json.loads((ROOT / "schemas" / "readings.schema.json").read_text())
+        ranking_schema = json.loads((ROOT / "schemas" / "ranking.schema.json").read_text())
+        jsonschema.validate(payload, readings_schema)
+        envelope = P.load_readings(document, payload)
+        receipt = P.ranking_receipt(document, P.evaluate(document, envelope.readings), envelope)
+        jsonschema.validate(receipt, ranking_schema)
+
+    def test_context_and_v2_receipt_match_their_schemas(self) -> None:
+        import jsonschema
+
+        document = doc()
+        readings = P.load_readings(document, ReadingsContractTests().payload(document))
+        payload = EvaluationContextTests().payload(document, readings)
+        context_schema = json.loads(
+            (ROOT / "schemas" / "evaluation-context.schema.json").read_text()
+        )
+        ranking_schema = json.loads((ROOT / "schemas" / "ranking-v2.schema.json").read_text())
+        jsonschema.validate(payload, context_schema)
+        context = P.load_evaluation_context(document, payload, readings)
+        jsonschema.validate(P.ranking_receipt_v2(document, context, readings), ranking_schema)
+
 
 class AbstractionTests(unittest.TestCase):
     """The pack must not name any adopter in a normative surface (AGENTS.md rule 1)."""
 
     NORMATIVE = ["docs/STANDARD.md", "docs/GRAMMAR.md", "docs/COMPLEMENTARITY.md",
-                 "docs/TRIGGERS.md", "schemas/priority.schema.json", "src/priority.py"]
+                 "docs/TRIGGERS.md", "schemas/priority.schema.json",
+                 "schemas/readings.schema.json", "schemas/evaluation-context.schema.json",
+                 "schemas/readings-composition.schema.json",
+                 "schemas/ranking.schema.json", "schemas/ranking-v2.schema.json",
+                 "schemas/evaluation-attestation.schema.json",
+                 "src/priority.py"]
 
     def test_no_adopter_names_in_normative_surfaces(self) -> None:
         forbidden = ("subactor", "semcod", "autogrammar", "wellmanifest/offer")
@@ -354,3 +791,7 @@ class AbstractionTests(unittest.TestCase):
             text = (ROOT / relative).read_text().lower()
             for name in forbidden:
                 self.assertNotIn(name, text, f"{relative} names {name}")
+
+
+if __name__ == "__main__":
+    unittest.main()

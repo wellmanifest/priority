@@ -12,10 +12,11 @@ is easy to state and easy to get wrong.
 | `priority-sweep.service` + `.timer` | every 5 min | No |
 | `priority-watch.sh` | filesystem event | No |
 
-## Producers
+## Producers and readings
 
-A producer prints one number on its last line. That is the whole contract, which
-is what lets any quality tool serve as one without knowing this pack exists:
+A producer reference in the priority document is opaque. The integration owns an
+explicit mapping from those references to trusted tools; it never passes the
+reference to a shell. A metric producer may print one number on its last line:
 
 ```sh
 # a gate that must fail closed, counted from workflow files
@@ -31,3 +32,9 @@ grep -rlE 'continue-on-error:\s*true' .github/workflows | wc -l
 If a producer fails or times out it yields **no reading**, and a missing reading
 fires nothing. A broken tool degrades the ranking's precision, never its
 availability, and it must never invent urgency.
+
+The integration serializes successful observations as a
+`wellmanifest.priority/readings/v1` envelope bound to the exact document digest,
+revision, declared producer reference, and observation time. See
+`../readings.demo.json`. The pure evaluator consumes that file and emits a
+non-authorizing `wellmanifest.priority/ranking/v1` receipt.

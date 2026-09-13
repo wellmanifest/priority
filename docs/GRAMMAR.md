@@ -12,7 +12,7 @@ EFFECT propose-only
 
 SIGNAL <name> <kind> <producer>          # kind: metric | event | schedule
   UNIT <string>                          # metric only
-  WINDOW <duration>                      # over how long the reading is valid
+  WINDOW <duration>                      # how long an observation stays fresh
   ABSENT <hold|zero>                     # what a missing reading means (default hold)
 
 PRIORITY <identifier>

@@ -7,6 +7,7 @@
 # anyone reads. Debounce, then evaluate once.
 set -eu
 DOC="${PRIORITY_DOCUMENT:-priority.dsl}"
+READINGS="${PRIORITY_READINGS:-.priority/readings.json}"
 DEBOUNCE="${PRIORITY_DEBOUNCE:-10}"
 
 command -v inotifywait >/dev/null 2>&1 || {
@@ -22,5 +23,11 @@ while true; do
     # shellcheck disable=SC2086
     inotifywait -qq -r -e modify,create,delete $SURFACES 2>/dev/null || true
     sleep "$DEBOUNCE"
-    priority project "$DOC" --probe --write >/dev/null 2>&1 || true
+    if [ -f "$READINGS" ]; then
+        priority receipt "$DOC" --readings "$READINGS"
+        priority check "$DOC" --readings "$READINGS" || true
+    else
+        priority receipt "$DOC"
+        priority check "$DOC" || true
+    fi
 done

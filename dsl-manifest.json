@@ -3,7 +3,7 @@
   "schema": "wellmanifest.dsl/manifest/v1",
   "id": "wellmanifest.priority",
   "name": "Wellmanifest priority and intent-evolution DSL",
-  "version": "0.1.0-dev",
+  "version": "0.1.1-dev",
   "status": "experimental",
   "purpose": "Declare standing priorities, the signals that reweight them, and the amendments by which the intent itself is revised. Propose-only: it ranks and explains, it never edits.",
   "domain": "software-prioritization",
@@ -30,8 +30,9 @@
     "docs/**",
     "dsl-manifest.json",
     "examples/**",
+    "pyproject.toml",
     "schemas/**",
-    "src/priority.py"
+    "src/**"
   ],
   "namespaces": [
     {
@@ -82,7 +83,8 @@
     "naturalLanguage": "typed-source-only",
     "sourceSchema": "wellmanifest.priority/v1",
     "modelAuthority": "none",
-    "strict": true
+    "strict": true,
+    "decisionProtocol": "none"
   },
   "documentation": {
     "vocabularyKind": "commands",
@@ -224,7 +226,7 @@
     {
       "path": "docs/ERROR/PRIORITY-PROJECTION-001.md",
       "role": "documentation",
-      "digest": "sha256:0d2bad971d14cdd8d2a42754edcbf4835258a9a8411824b71780ae2c9a065f55"
+      "digest": "sha256:83336c930ba9b2850b92a59d4b27953f1bb3e2dd7a1bdcc52d6fbab6b49f8002"
     },
     {
       "path": "docs/ERROR/PRIORITY-RELATION-001.md",
@@ -279,7 +281,7 @@
     {
       "path": "docs/GRAMMAR.md",
       "role": "documentation",
-      "digest": "sha256:7ab0fc117a98d0372e0470aada19224f8cd916160d6d6b5e93505da98a1e07e5"
+      "digest": "sha256:bd724f49b4b0efd21cb49bf8b96273f14b86dde070b0d9f46f10fb2a3eececd5"
     },
     {
       "path": "docs/PRIORITY.md",
@@ -294,47 +296,52 @@
     {
       "path": "docs/SIGNAL.md",
       "role": "documentation",
-      "digest": "sha256:1238b9f93ba013d35685b3349cc51aade1b1d2ef6b5b27ec859bd359a61d329d"
+      "digest": "sha256:2e6b19ccd1124e7fdbb16951a1e2a0585e7506446421403227fa436ff38b1293"
     },
     {
       "path": "docs/STANDARD.md",
       "role": "documentation",
-      "digest": "sha256:2748c309efce6b013589716790355e2e622318ea9b5a483f807faeab2c9881c6"
+      "digest": "sha256:ab62bcd9f40e876c9335d6a4486fc6a88ec8d3e1708a6fd2a4981657cc0b59a1"
     },
     {
       "path": "docs/TRIGGERS.md",
       "role": "documentation",
-      "digest": "sha256:e770b1e31ffa0e7ee49614d5bc5000091f4b492f0d5acf56b00c4ae572475863"
+      "digest": "sha256:07bd60ee9cfca16ea062113ce66b4318ecb4c37da2d601140384132273cb63a9"
+    },
+    {
+      "path": "examples/evaluation-context.demo.json",
+      "role": "example",
+      "digest": "sha256:add3ac4bc421ddf5b60dc46e0aee0009ee84c660680a3688c49e39dbfe86e6ab"
     },
     {
       "path": "examples/integration/README.md",
       "role": "example",
-      "digest": "sha256:0c5145e9dfff580c60149e0b3bdd7e0680eb25d69ce5dcd640c6381a4e02d451"
+      "digest": "sha256:cab172a225b23fe6861971f53c975d70174e85fd450cf27dce33c5f6165b9a2e"
     },
     {
       "path": "examples/integration/pre-commit",
       "role": "example",
-      "digest": "sha256:6a83fec179a996f4832a6d73fc01512a95d014b08150285c1ee4b8cc46e58dc8"
+      "digest": "sha256:93617a60def822a7ee6bb50bb8755527cb93fb901efbb65ec8ea8f7f0157f27c"
     },
     {
       "path": "examples/integration/priority-sweep.service",
       "role": "example",
-      "digest": "sha256:b4ffabda11a1d221098803b115935a338a43a4817d6110b017f56d1274a11b83"
+      "digest": "sha256:684943164f174c743594eedb84d952ed740b6e1e0c24e0f3f0b7ee7d56fbd68d"
     },
     {
       "path": "examples/integration/priority-sweep.timer",
       "role": "example",
-      "digest": "sha256:b7ea84acca9fa683d181c9c4d8ca904f62c8522292830fbabd81b6c15246931b"
+      "digest": "sha256:4f3436d5c962d4a28ef8e681ff4b137b442edf4552ea2ae54985e1a5c4ac84f6"
     },
     {
       "path": "examples/integration/priority-watch.sh",
       "role": "example",
-      "digest": "sha256:1498abd2ad606fd97699e302b3a16feff7b5b836d18d677f24ac807733f7139c"
+      "digest": "sha256:311f3e3fe34f7603f7b2f6bc0e53d843a00199e84c78eb0dce44f6a5b7d962df"
     },
     {
       "path": "examples/integration/pyqual.yaml",
       "role": "example",
-      "digest": "sha256:60e5a99d7af4e9de0daa31c61729c33469083d21f51d10990718e0851aae65a7"
+      "digest": "sha256:5ad934ab6a136dcd86ecc5bd91faa4b7f5f240d40b165195d9e046a3d7bd7a12"
     },
     {
       "path": "examples/invalid/unsourced-signal.priority.dsl",
@@ -344,7 +351,7 @@
     {
       "path": "examples/readings.demo.json",
       "role": "example",
-      "digest": "sha256:2ed88229b5b7de70ed0803c8eda78e49afeaf13583c8c2196940b57dc5208ab5"
+      "digest": "sha256:0757111c6f3430fa861ec9dff3a3c161fe3b3ffa9b31d93f46c5f28c3d2555cb"
     },
     {
       "path": "examples/standardization.priority.dsl",
@@ -352,14 +359,54 @@
       "digest": "sha256:8d49f6ea4071264d90c93abdbab2f8bc622bdb24d7226308c45e573e0809bc7d"
     },
     {
+      "path": "schemas/evaluation-attestation.schema.json",
+      "role": "schema",
+      "digest": "sha256:f717f5022cca24927a6cd26caad57c28a88084a042eb9eb97a713a81dea31864"
+    },
+    {
+      "path": "schemas/evaluation-context.schema.json",
+      "role": "schema",
+      "digest": "sha256:d946d6ab81183c32892bfb706f168a7dbe91670e2374f3341a6e518c87c8b966"
+    },
+    {
       "path": "schemas/priority.schema.json",
       "role": "normative-source",
       "digest": "sha256:574e3978724168ed3f6c309afdab5cf6d688a7d7c5b9d7edb1b009306920ad2f"
     },
     {
+      "path": "schemas/ranking-v2.schema.json",
+      "role": "schema",
+      "digest": "sha256:1d70d31e623e2e753cd946df706d23136615591703232eee1ba3c657012abbe0"
+    },
+    {
+      "path": "schemas/ranking.schema.json",
+      "role": "schema",
+      "digest": "sha256:4769bc4c38df67d8502f11f212a58dbf54620515a2d9edef6e27f7985a005afc"
+    },
+    {
+      "path": "schemas/readings-composition.schema.json",
+      "role": "schema",
+      "digest": "sha256:5e2342ddc5d6cf9de65b94f624d44a3db2ed79b3999bc837948860d6f8d80ef3"
+    },
+    {
+      "path": "schemas/readings.schema.json",
+      "role": "schema",
+      "digest": "sha256:a9a48968f903531ba5a66e565c8c7786c7873026c44565ddfb0a34daa4091624"
+    },
+    {
+      "path": "pyproject.toml",
+      "role": "normative-source",
+      "digest": "sha256:48164971c0c622e52e4c6186348ee066e5c69cae96a2f09b88b4ba851fee7f2c"
+    },
+    {
       "path": "src/priority.py",
       "role": "normative-source",
-      "digest": "sha256:18eb2e45abd54a6b73540e01925aa8b106dbe0703b69d6f4871ec312ff0f210d"
+      "digest": "sha256:609795f061e4d735445db3f2e9f47ee60c9880a2e622b29e735d690acdfe77a6"
+    },
+    {
+      "path": "src/wellmanifest_priority/__init__.py",
+      "role": "parser-contract",
+      "digest": "sha256:e652b1861e14b5c99412c99e41c1ee5604342214ea44a8ea6e3f072ae87bd4bd"
     }
   ]
 }

@@ -33,20 +33,56 @@ authorizes an edit.
 ## Usage
 
 ```sh
-PYTHONPATH=src python3 -m priority validate examples/standardization.priority.dsl
-PYTHONPATH=src python3 -m priority rank    examples/standardization.priority.dsl --readings readings.json
-PYTHONPATH=src python3 -m priority matrix  examples/standardization.priority.dsl
-PYTHONPATH=src python3 -m priority select  examples/standardization.priority.dsl --capacity 3
-PYTHONPATH=src python3 -m priority project examples/standardization.priority.dsl --write
-PYTHONPATH=src python3 -m priority check   examples/standardization.priority.dsl   # drift gate
+python3 -m pip install -e .
+priority validate examples/standardization.priority.dsl
+priority rank    examples/standardization.priority.dsl --readings examples/readings.demo.json
+priority receipt examples/standardization.priority.dsl \
+  --readings examples/readings.demo.json \
+  --context examples/evaluation-context.demo.json
+priority matrix  examples/standardization.priority.dsl
+priority select  examples/standardization.priority.dsl --capacity 3
+priority project examples/standardization.priority.dsl   # proposed bytes only
+priority check   examples/standardization.priority.dsl   # drift gate
 ```
+
+The evaluator accepts only a versioned `wellmanifest.priority/readings/v1`
+envelope bound to the exact document digest and producer references. It never
+executes those producers. A runtime integration may run an explicit allowlist,
+then pass its observations to the pure evaluator. `observedAt` controls reading
+freshness; optional `activeSince` records how long a condition has held.
+
+Independent producers may emit partial readings envelopes. `compose_readings`
+combines disjoint, validated envelopes and emits a
+`wellmanifest.priority/readings-composition/v1` receipt binding every source
+digest and revision to the final readings digest. Duplicate signals and source
+observations newer than the composition time fail closed.
+
+`priority receipt` emits a deterministic `wellmanifest.priority/ranking/v1`
+receipt. It is digest-bound and always carries `executionAuthorized: false`.
+
+Escalation, decay and starvation additionally depend on elapsed durations. A
+runtime that supplies them uses a
+`wellmanifest.priority/evaluation-context/v1` envelope bound to the exact
+document and readings revision. Passing `--context` emits
+`wellmanifest.priority/ranking/v2`, whose receipt binds every input that can
+change the rank. V1 remains available for evaluations that do not supply this
+time context.
+
+An external runtime may sign an
+`wellmanifest.priority/evaluation-attestation/v1` over the exact document,
+readings, context and ranking v2 digest. The reference verifier requires an
+allowlisted issuer implementation digest, audience, current 15-minute validity
+window, unused nonce and a caller-provided protected signature verifier. The
+attestation remains `executionAuthorized: false`; it proves provenance and
+reproducibility, not permission to execute work.
 
 ## Reaching heterogeneous agents
 
 Claude, ChatGPT/Codex, Gemini and IDE assistants read different files, and no
 standard will change that. So the document is the authority and every agent-facing
-file is a **generated projection** of it, spliced into a marked block so
-hand-written instructions around it survive:
+file is a **generated projection** of it. `priority project` only proposes the
+exact output bytes. An adopter-owned workflow may review and splice the marked
+block so hand-written instructions around it survive:
 
 | Target | File |
 |---|---|
